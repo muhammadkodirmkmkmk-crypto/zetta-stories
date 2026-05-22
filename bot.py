@@ -32,8 +32,8 @@ TELEGRAM_BOT_TOKEN    = os.environ["TELEGRAM_BOT_TOKEN"]
 FAL_KEY               = os.environ["FAL_KEY"]
 TELEGRAM_USER_ID      = int(os.environ["TELEGRAM_USER_ID"])
 SECOND_APPROVER_ID    = 182606553
-INSTAGRAM_ACCESS_TOKEN = os.environ.get("INSTAGRAM_ACCESS_TOKEN", "")
-INSTAGRAM_ACCOUNT_ID   = os.environ.get("INSTAGRAM_USER_ID", "")
+INSTAGRAM_USERNAME = os.environ.get("INSTAGRAM_USERNAME", "")
+INSTAGRAM_PASSWORD = os.environ.get("INSTAGRAM_PASSWORD", "")
 
 BRAND_RED = "#A70D19"
 IMAGE_W, IMAGE_H = 1080, 1920
@@ -294,47 +294,37 @@ async def generate_fal_image(image_prompt: str) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# Instagram Graph API publishing
+# Instagram publishing via instagrapi
 # ---------------------------------------------------------------------------
 
-async def publish_to_instagram(image_url: str, slot_num: int) -> bool:
-    if not INSTAGRAM_ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
+def _instagram_upload_sync(image_bytes: bytes, slot_num: int) -> bool:
+    import tempfile
+    from instagrapi import Client
+
+    if not INSTAGRAM_USERNAME or not INSTAGRAM_PASSWORD:
         logger.warning("Instagram credentials not set — skipping publish")
         return False
 
-    graph_url = "https://graph.facebook.com/v19.0"
-    logger.info("Publishing story #%d to Instagram...", slot_num)
+    logger.info("Logging in to Instagram as %s...", INSTAGRAM_USERNAME)
+    cl = Client()
+    cl.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
+    logger.info("Instagram login successful")
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        # Step 1: create media container
-        resp = await client.post(
-            f"{graph_url}/{INSTAGRAM_ACCOUNT_ID}/media",
-            params={
-                "image_url":   image_url,
-                "media_type":  "STORIES",
-                "access_token": INSTAGRAM_ACCESS_TOKEN,
-            },
-        )
-        resp.raise_for_status()
-        creation_id = resp.json().get("id")
-        if not creation_id:
-            logger.error("Instagram container creation failed: %s", resp.text)
-            return False
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        tmp.write(image_bytes)
+        tmp_path = tmp.name
 
-        logger.info("Instagram container created: %s", creation_id)
-
-        # Step 2: publish the container
-        resp2 = await client.post(
-            f"{graph_url}/{INSTAGRAM_ACCOUNT_ID}/media_publish",
-            params={
-                "creation_id":  creation_id,
-                "access_token": INSTAGRAM_ACCESS_TOKEN,
-            },
-        )
-        resp2.raise_for_status()
-        media_id = resp2.json().get("id")
-        logger.info("Story #%d published to Instagram: media_id=%s", slot_num, media_id)
+    try:
+        cl.story_upload_photo(tmp_path, caption="")
+        logger.info("Story #%d published to Instagram successfully", slot_num)
         return True
+    finally:
+        os.unlink(tmp_path)
+
+
+async def publish_to_instagram(image_bytes: bytes, slot_num: int) -> bool:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _instagram_upload_sync, image_bytes, slot_num)
 
 
 # ---------------------------------------------------------------------------
@@ -483,16 +473,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         filename.write_bytes(story["image_bytes"])
         logger.info("Story #%d saved → %s", slot_num, filename)
 
-        # Get public Telegram URL for Instagram API
+        # Publish to Instagram using stored image bytes
         instagram_ok = False
-        file_id = story.get("telegram_file_id")
-        if file_id:
-            try:
-                tg_file   = await context.bot.get_file(file_id)
-                image_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{tg_file.file_path}"
-                instagram_ok = await publish_to_instagram(image_url, slot_num)
-            except Exception as e:
-                logger.error("Instagram publish error for story #%d: %s", slot_num, e)
+        try:
+            instagram_ok = await publish_to_instagram(story["image_bytes"], slot_num)
+        except Exception as e:
+            logger.error("Instagram publish error for story #%d: %s", slot_num, e)
 
         ig_status = "✅ Instagram-ga joylashtirildi!" if instagram_ok else "⚠️ Instagram-ga joylashtirishda xatolik yoki sozlamalar yo'q."
         await query.edit_message_caption(
