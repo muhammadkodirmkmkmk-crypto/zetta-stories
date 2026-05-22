@@ -146,7 +146,7 @@ def _story_caption(slot_num: int, story: dict, suffix: str = "") -> str:
         f"📸 *Story #{slot_num}*{suffix}\n\n"
         f"🏷 *Xususiyat:* {story['feature_name']}\n"
         f"📝 *Sarlavha:* {story['title']}\n"
-        f"💬 *Taglavha:* {story['subtitle']}"
+        f"💬 *Taglavha:* {story.get('subtitle', '')}"
     )
 
 
@@ -286,7 +286,6 @@ def generate_edited_content(story: dict, edit_request: str) -> dict:
 Mavjud kontent:
 - feature_name: {story['feature_name']}
 - title: {story['title']}
-- subtitle: {story['subtitle']}
 - image_prompt: {story['image_prompt']}
 
 Foydalanuvchi so'rovi: {edit_request}
@@ -295,8 +294,7 @@ Faqat o'zgartirilishi kerak bo'lgan maydonlarni yangilang. O'zgartirilmagan mayd
 Faqat JSON qaytargin, hech qanday izoh yo'q:
 {{
   "feature_name": "...",
-  "title": "KATTA HARFLARDA, MAKSIMAL 5 SO'Z",
-  "subtitle": "Maksimal 10 so'z",
+  "title": "KATTA HARFLARDA, MAKSIMAL 4 SO'Z, BITTA QATORDA SIG'ADIGAN SLOGAN",
   "image_prompt": "Detailed English prompt..."
 }}"""
 
@@ -400,7 +398,7 @@ async def build_story(feature_name: str, feature_desc: str) -> dict:
     return {
         "feature_name": feature_name,
         "title":        content["title"],
-        "subtitle":     content["subtitle"],
+        "subtitle":     content.get("subtitle", ""),
         "image_prompt": content["image_prompt"],
         "image_bytes":  composed,
     }
@@ -416,7 +414,7 @@ async def build_edited_story(story: dict, edit_request: str) -> dict:
     return {
         "feature_name": content["feature_name"],
         "title":        content["title"],
-        "subtitle":     content["subtitle"],
+        "subtitle":     content.get("subtitle", ""),
         "image_prompt": content["image_prompt"],
         "image_bytes":  composed,
     }
@@ -503,7 +501,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"📸 Story #{slot_num}\n"
                 f"🏷 *Xususiyat:* {story['feature_name']}\n"
                 f"📝 *Sarlavha:* {story['title']}\n"
-                f"💬 *Taglavha:* {story['subtitle']}\n\n"
+                f"💬 *Taglavha:* {story.get('subtitle', '')}\n\n"
                 "Instagram Stories-ga joylashtirilsinmi?"
             ),
             parse_mode="Markdown",
