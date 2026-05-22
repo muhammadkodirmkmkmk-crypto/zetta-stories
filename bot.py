@@ -146,7 +146,6 @@ def _story_caption(slot_num: int, story: dict, suffix: str = "") -> str:
         f"📸 *Story #{slot_num}*{suffix}\n\n"
         f"🏷 *Xususiyat:* {story['feature_name']}\n"
         f"📝 *Sarlavha:* {story['title']}\n"
-        f"💬 *Taglavha:* {story.get('subtitle', '')}"
     )
 
 
@@ -180,81 +179,69 @@ def _wrap_title(title: str, max_chars: int = 18) -> list[str]:
     return lines[:2]
 
 
-def compose_story_image(photo_bytes: bytes, title: str, subtitle: str = "") -> bytes:
-    # ── 1. Base photo — fill entire 1080×1920 canvas ─────────────────────────
+def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
+    # ── 1. Photo fills entire 1080×1920 canvas ───────────────────────────────
     photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
     photo = photo.resize((IMAGE_W, IMAGE_H), Image.LANCZOS)
 
-    # ── 2. Red gradient overlay ───────────────────────────────────────────────
-    #   Solid red from y=0 to SOLID_H, then linear fade to 0 by FADE_H
-    SOLID_H  = 350    # fully opaque red block
-    FADE_H   = 780    # fully transparent below this
+    # ── 2. Red gradient: solid #A70D19 y=0-280, fade to transparent by y=580 ─
+    SOLID_H  = 280
+    FADE_H   = 580
     y_idx    = np.arange(IMAGE_H, dtype=np.float32)
     fade     = np.clip((y_idx - SOLID_H) / (FADE_H - SOLID_H), 0.0, 1.0)
     alpha_1d = np.clip(255.0 * (1.0 - fade), 0, 255).astype(np.uint8)
 
     overlay_arr = np.zeros((IMAGE_H, IMAGE_W, 4), dtype=np.uint8)
-    overlay_arr[:, :, 0] = 167   # red
-    overlay_arr[:, :, 1] = 13    # green
-    overlay_arr[:, :, 2] = 25    # blue
-    overlay_arr[:, :, 3] = alpha_1d[:, np.newaxis]   # per-row alpha
+    overlay_arr[:, :, 0] = 0xA7   # #A70D19
+    overlay_arr[:, :, 1] = 0x0D
+    overlay_arr[:, :, 2] = 0x19
+    overlay_arr[:, :, 3] = alpha_1d[:, np.newaxis]
 
     overlay = Image.fromarray(overlay_arr, mode="RGBA")
     canvas  = Image.alpha_composite(photo.convert("RGBA"), overlay)
     draw    = ImageDraw.Draw(canvas)
 
-    def _draw_centered(d, text, font, y):
-        """Draw text centered horizontally with drop-shadow."""
+    def _centered(d, text, font, y):
         bbox = d.textbbox((0, 0), text, font=font)
-        w    = bbox[2] - bbox[0]
-        x    = (IMAGE_W - w) // 2
-        # shadow
+        x = (IMAGE_W - (bbox[2] - bbox[0])) // 2
         d.text((x + 3, y + 3), text, font=font, fill=(0, 0, 0, 160))
-        # white text
-        d.text((x, y), text, font=font, fill=(255, 255, 255, 255))
-        return bbox[3] - bbox[1]   # return rendered line height
-
-    def _draw_left(d, text, font, x, y, shadow_offset=4):
-        """Draw text left-aligned with drop shadow."""
-        d.text((x + shadow_offset, y + shadow_offset), text, font=font, fill=(0, 0, 0, 160))
         d.text((x, y), text, font=font, fill=(255, 255, 255, 255))
 
-    # ── 3. Logo "Z E T T A" — centered, y=80 ─────────────────────────────────
-    logo_font = _find_font(bold=False, size=65)
-    _draw_centered(draw, "Z E T T A", logo_font, y=80)
+    # ── 3. Logo: "Z E T T A", centered, y=85, 60px ───────────────────────────
+    _centered(draw, "Z E T T A", _find_font(bold=False, size=60), y=85)
 
-    # ── 4. Title — BOLD, centered, auto-fit, single line (wrap at 55px fallback)
+    # ── 4. Title: bold, centered, y=200 ──────────────────────────────────────
+    #   ≤20 chars → 100px, 1 line
+    #   >20 chars → 85px, up to 2 lines (split at middle word)
+    #   Never exceed 960px wide (60px padding each side)
     title_upper = title.upper()
-    max_title_w = IMAGE_W - 80  # 40px margin each side
-    t_size = 55
-    for candidate_size in (130, 110, 90, 70, 55):
-        test_font = _find_font(bold=True, size=candidate_size)
-        bbox = draw.textbbox((0, 0), title_upper, font=test_font)
-        if (bbox[2] - bbox[0]) <= max_title_w:
-            t_size = candidate_size
-            break
-    title_font = _find_font(bold=True, size=t_size)
-    logger.info("Title: %dpx, len=%d", t_size, len(title_upper))
+    MAX_W       = IMAGE_W - 120   # 960px
 
-    final_bbox = draw.textbbox((0, 0), title_upper, font=title_font)
-    if final_bbox[2] - final_bbox[0] > max_title_w:
-        words = title_upper.split()
-        mid   = max(1, len(words) // 2)
-        title_lines = [" ".join(words[:mid]), " ".join(words[mid:])]
+    if len(title_upper) <= 20:
+        t_size = 100
+        font   = _find_font(bold=True, size=t_size)
+        w      = draw.textbbox((0, 0), title_upper, font=font)[2]
+        if w <= MAX_W:
+            title_lines = [title_upper]
+        else:
+            # still too wide at 100px — drop to 85 and single line
+            t_size = 85
+            font   = _find_font(bold=True, size=t_size)
+            title_lines = [title_upper]
     else:
-        title_lines = [title_upper]
+        t_size = 85
+        font   = _find_font(bold=True, size=t_size)
+        words  = title_upper.split()
+        mid    = max(1, len(words) // 2)
+        title_lines = [" ".join(words[:mid]), " ".join(words[mid:])]
 
-    y_pos = 170
+    logger.info("Title: %dpx, lines=%d, text=%s", t_size, len(title_lines), title_lines)
+    y_pos = 200
     for line in title_lines:
-        _draw_centered(draw, line, title_font, y=y_pos)
-        y_pos += t_size + 10
+        _centered(draw, line, font, y=y_pos)
+        y_pos += t_size + 12
 
-    # ── 5. Subtitle — centered, 52px, below title ─────────────────────────────
-    if subtitle:
-        sub_font = _find_font(bold=False, size=52)
-        _draw_centered(draw, subtitle, sub_font, y=y_pos + 20)
-
-    # ── 6. Output — exactly 1080×1920 JPEG ───────────────────────────────────
+    # ── 5. Output ─────────────────────────────────────────────────────────────
     result = canvas.convert("RGB")
     assert result.size == (IMAGE_W, IMAGE_H), f"Bad size: {result.size}"
     buf = io.BytesIO()
@@ -277,13 +264,11 @@ Quyidagi iiko xususiyati uchun kontent yarat:
 
 Faqat JSON qaytargin, hech qanday izoh yo'q:
 {{
-  "feature_name": "{feature_name}",
-  "title": "KATTA HARFLARDA, MAKSIMAL 5 SO'Z, QISQA VA JOZIBALI SLOGAN",
-  "subtitle": "Qisqa foyda jumlasi, maksimal 8 so'z, oddiy harflarda",
-  "image_prompt": "Describe a bright, upscale restaurant interior scene related to {feature_name}. Include: elegantly dressed staff (waiter or manager) smiling and using a smartphone or tablet, happy guests at white-tablecloth tables with flowers and wine glasses, large windows with natural daylight flooding the room, warm neutral tones (cream, beige, soft wood), shallow depth of field, professional editorial photography style. The scene must feel premium, modern, and welcoming. No text, no logos, no watermarks in image."
+  "title": "O'ZBEK TILIDA, BOSH HARFLAR, MAKSIMAL 5-6 SO'Z, QISQA VA JOZIBALI SLOGAN",
+  "image_prompt": "Detailed English prompt for photorealistic restaurant or business scene related to {feature_name}. Professional photography, warm lighting, elegant interior, staff using technology, no text in image, 4k quality."
 }}
 
-Muhim: title o'zbek tilida bo'lsin, qisqa (maksimal 5 so'z). subtitle ham o'zbek tilida, qisqa va foydali. image_prompt inglizcha va batafsil bo'lsin."""
+Muhim: title o'zbek tilida, qisqa (maksimal 5-6 so'z), rasmda bir qatorda sig'adigan bo'lsin. image_prompt inglizcha va batafsil bo'lsin. Boshqa maydon kerak emas."""
 
     response = claude_client.messages.create(
         model="claude-opus-4-5",
@@ -307,11 +292,9 @@ Mavjud kontent:
 
 Foydalanuvchi so'rovi: {edit_request}
 
-Faqat o'zgartirilishi kerak bo'lgan maydonlarni yangilang. O'zgartirilmagan maydonlarni aynan saqlang.
-Faqat JSON qaytargin, hech qanday izoh yo'q:
+Faqat o'zgartirilishi kerak bo'lgan maydonlarni yangilang. Faqat JSON qaytargin:
 {{
-  "feature_name": "...",
-  "title": "KATTA HARFLARDA, MAKSIMAL 4 SO'Z, BITTA QATORDA SIG'ADIGAN SLOGAN",
+  "title": "O'ZBEK TILIDA, BOSH HARFLAR, MAKSIMAL 5-6 SO'Z",
   "image_prompt": "Detailed English prompt..."
 }}"""
 
@@ -410,12 +393,11 @@ async def build_story(feature_name: str, feature_desc: str) -> dict:
     content = await loop.run_in_executor(None, generate_story_content, feature_name, feature_desc)
 
     photo_bytes = await generate_fal_image(content["image_prompt"])
-    composed    = compose_story_image(photo_bytes, content["title"], content.get("subtitle", ""))
+    composed    = compose_story_image(photo_bytes, content["title"])
 
     return {
         "feature_name": feature_name,
         "title":        content["title"],
-        "subtitle":     content.get("subtitle", ""),
         "image_prompt": content["image_prompt"],
         "image_bytes":  composed,
     }
@@ -426,12 +408,11 @@ async def build_edited_story(story: dict, edit_request: str) -> dict:
     content = await loop.run_in_executor(None, generate_edited_content, story, edit_request)
 
     photo_bytes = await generate_fal_image(content["image_prompt"])
-    composed    = compose_story_image(photo_bytes, content["title"], content.get("subtitle", ""))
+    composed    = compose_story_image(photo_bytes, content["title"])
 
     return {
-        "feature_name": content["feature_name"],
+        "feature_name": content.get("feature_name", story["feature_name"]),
         "title":        content["title"],
-        "subtitle":     content.get("subtitle", ""),
         "image_prompt": content["image_prompt"],
         "image_bytes":  composed,
     }
@@ -518,7 +499,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"📸 Story #{slot_num}\n"
                 f"🏷 *Xususiyat:* {story['feature_name']}\n"
                 f"📝 *Sarlavha:* {story['title']}\n"
-                f"💬 *Taglavha:* {story.get('subtitle', '')}\n\n"
                 "Instagram Stories-ga joylashtirilsinmi?"
             ),
             parse_mode="Markdown",
