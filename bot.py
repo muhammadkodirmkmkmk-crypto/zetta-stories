@@ -224,31 +224,19 @@ def compose_story_image(photo_bytes: bytes, title: str, subtitle: str = "") -> b
     logger.info("Logo font size: %dpx", logo_size)
     _draw_centered(draw, "Z E T T A", logo_font, y=100)
 
-    # ── 4. Title — BOLD, left x=60, y=200 ────────────────────────────────────
-    #   Short title (≤20 chars): 130px, single line
-    #   Long title  (>20 chars): 100px, wrap at 15 chars per line
+    # ── 4. Title — BOLD, single line, auto-fit, left x=60, y=200 ─────────────
     title_upper = title.upper()
-    if len(title_upper) <= 20:
-        t_size    = 130
-        max_chars = 20
-    else:
-        t_size    = 100
-        max_chars = 15
+    max_title_w = IMAGE_W - 60 - 40  # 60px left margin, 40px right padding
+    t_size = 130
+    for candidate_size in (130, 110, 90, 70, 55):
+        test_font = _find_font(bold=True, size=candidate_size)
+        bbox = draw.textbbox((0, 0), title_upper, font=test_font)
+        if (bbox[2] - bbox[0]) <= max_title_w:
+            t_size = candidate_size
+            break
     title_font = _find_font(bold=True, size=t_size)
     logger.info("Title font size: %dpx (title len=%d)", t_size, len(title_upper))
-    lines  = _wrap_title(title_upper, max_chars=max_chars)
-    line_h = t_size + 16
-    last_y = 200
-    for line in lines:
-        _draw_left(draw, line, title_font, x=60, y=last_y, shadow_offset=4)
-        last_y += line_h
-
-    # ── 5. Subtitle — 55px regular, left x=60, 30px below title ─────────────
-    if subtitle:
-        sub_size = 55
-        sub_font = _find_font(bold=False, size=sub_size)
-        logger.info("Subtitle font size: %dpx", sub_size)
-        _draw_left(draw, subtitle, sub_font, x=60, y=last_y + 30, shadow_offset=4)
+    _draw_left(draw, title_upper, title_font, x=60, y=200, shadow_offset=4)
 
     # ── 6. Output — exactly 1080×1920 JPEG ───────────────────────────────────
     result = canvas.convert("RGB")
@@ -274,12 +262,11 @@ Quyidagi iiko xususiyati uchun kontent yarat:
 Faqat JSON qaytargin, hech qanday izoh yo'q:
 {{
   "feature_name": "{feature_name}",
-  "title": "KATTA HARFLARDA, MAKSIMAL 4 SO'Z, JUDA QISQA SLOGAN",
-  "subtitle": "Maksimal 10 so'z, foyda yoki muammoni hal qilish haqida",
+  "title": "KATTA HARFLARDA, MAKSIMAL 4 SO'Z, BITTA QATORDA SIG'ADIGAN SLOGAN",
   "image_prompt": "Describe a bright, upscale restaurant interior scene related to {feature_name}. Include: elegantly dressed staff (waiter or manager) smiling and using a smartphone or tablet, happy guests at white-tablecloth tables with flowers and wine glasses, large windows with natural daylight flooding the room, warm neutral tones (cream, beige, soft wood), shallow depth of field, professional editorial photography style. The scene must feel premium, modern, and welcoming. No text, no logos, no watermarks in image."
 }}
 
-Muhim: title o'zbek tilida bo'lsin, JUDA qisqa (maksimal 4 so'z) — rasmda BIR QATORDA joylashishi kerak. image_prompt inglizcha va batafsil bo'lsin."""
+Muhim: title o'zbek tilida bo'lsin, JUDA qisqa (maksimal 4 so'z) — rasmda BITTA QATORDA joylashishi kerak. Subtitle kerak emas. image_prompt inglizcha va batafsil bo'lsin."""
 
     response = claude_client.messages.create(
         model="claude-opus-4-5",
