@@ -367,32 +367,24 @@ async def generate_fal_image(image_prompt: str) -> bytes:
 SESSION_FILE = "/app/instagram_session.json"
 
 
-def _ig_credentials() -> tuple[str, str, str]:
-    """Return (ig_login, ig_user, ig_pass). ig_login is email if set, else username."""
-    ig_pass  = os.environ.get("INSTAGRAM_PASSWORD", "").strip()
-    ig_email = os.environ.get("INSTAGRAM_EMAIL", "").strip()
-    ig_user  = os.environ.get("INSTAGRAM_USERNAME", "").strip()
-    ig_login = ig_email or ig_user
-    return ig_login, ig_user, ig_pass
-
-
 def _ig_fresh_login(cl: "object") -> str | None:  # type: ignore[name-defined]
     """
     Login to Instagram with saved session (if exists), falling back to fresh login.
-    Saves session on success.  Returns None on success, error string on failure.
+    Uses INSTAGRAM_PHONE + INSTAGRAM_PASSWORD.
+    Saves session on success. Returns None on success, error string on failure.
     """
-    from instagrapi import Client  # noqa: F401 (type hint only)
-    ig_login, ig_user, ig_pass = _ig_credentials()
+    ig_phone = os.environ.get("INSTAGRAM_PHONE", "").strip()
+    ig_pass  = os.environ.get("INSTAGRAM_PASSWORD", "").strip()
 
-    if not ig_login or not ig_pass:
-        return "INSTAGRAM_EMAIL (or INSTAGRAM_USERNAME) and INSTAGRAM_PASSWORD must be set in Railway"
+    if not ig_phone or not ig_pass:
+        return "INSTAGRAM_PHONE and INSTAGRAM_PASSWORD must be set in Railway"
 
     # ── Try loading saved session first ───────────────────────────────────────
     if os.path.exists(SESSION_FILE):
         try:
             cl.load_settings(SESSION_FILE)
-            cl.login(ig_login, ig_pass)   # reuse cookies; just refreshes token
-            cl.get_timeline_feed()        # verify session is actually alive
+            cl.login(ig_phone, ig_pass)
+            cl.get_timeline_feed()
             logger.info("Instagram session loaded from %s", SESSION_FILE)
             return None
         except Exception as e:
@@ -403,36 +395,29 @@ def _ig_fresh_login(cl: "object") -> str | None:  # type: ignore[name-defined]
                 pass
 
     # ── Fresh login ───────────────────────────────────────────────────────────
-    last_err: Exception | None = None
-    for identifier in dict.fromkeys([ig_login, ig_user]):   # deduplicated, order preserved
-        if not identifier:
-            continue
-        try:
-            logger.info("Instagram fresh login with %r...", identifier)
-            cl.login(identifier, ig_pass)
-            cl.dump_settings(SESSION_FILE)
-            logger.info("Instagram login OK — session saved to %s", SESSION_FILE)
-            return None
-        except Exception as e:
-            logger.warning("Login with %r failed: %s", identifier, e)
-            last_err = e
-
-    return f"Instagram login failed: {last_err!r}"
+    try:
+        logger.info("Instagram fresh login with phone %r...", ig_phone)
+        cl.login(ig_phone, ig_pass)
+        cl.dump_settings(SESSION_FILE)
+        logger.info("Instagram login OK — session saved to %s", SESSION_FILE)
+        return None
+    except Exception as e:
+        import traceback as _tb
+        print(f"INSTAGRAM LOGIN ERROR:\n{_tb.format_exc()}", flush=True)
+        logger.error("Instagram login failed: %s", e)
+        return f"{type(e).__name__}: {e}"
 
 
 def _instagram_login_sync() -> str:
     """Blocking helper for /login command. Returns status string."""
-    import traceback
     from instagrapi import Client
     cl = Client()
     cl.delay_range = [1, 3]
     err = _ig_fresh_login(cl)
     if err:
-        tb = traceback.format_exc()
-        print(f"INSTAGRAM LOGIN ERROR:\n{tb}", flush=True)
         return f"❌ Login xatolik:\n{err}"
-    ig_login, _, _ = _ig_credentials()
-    return f"✅ Instagram login muvaffaqiyatli!\nIdentifier: {ig_login}\nSession: {SESSION_FILE}"
+    ig_phone = os.environ.get("INSTAGRAM_PHONE", "")
+    return f"✅ Instagram login muvaffaqiyatli!\nTelefon: {ig_phone}\nSession: {SESSION_FILE}"
 
 
 def _instagram_upload_sync(image_bytes: bytes, slot_num: int) -> str | None:
@@ -444,9 +429,10 @@ def _instagram_upload_sync(image_bytes: bytes, slot_num: int) -> str | None:
     import time
     from instagrapi import Client
 
-    ig_login, ig_user, ig_pass = _ig_credentials()
-    if not ig_login or not ig_pass:
-        msg = "INSTAGRAM_EMAIL (or INSTAGRAM_USERNAME) and INSTAGRAM_PASSWORD must be set in Railway environment"
+    ig_phone = os.environ.get("INSTAGRAM_PHONE", "").strip()
+    ig_pass  = os.environ.get("INSTAGRAM_PASSWORD", "").strip()
+    if not ig_phone or not ig_pass:
+        msg = "INSTAGRAM_PHONE and INSTAGRAM_PASSWORD must be set in Railway"
         logger.error(msg)
         return msg
 
