@@ -126,11 +126,14 @@ def _primary_keyboard(slot_idx: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Tasdiqlash",        callback_data=f"approve:{slot_idx}"),
-            InlineKeyboardButton("🔄 Qayta yaratish",   callback_data=f"regen:{slot_idx}"),
-            InlineKeyboardButton("❌ O'tkazib yuborish", callback_data=f"skip:{slot_idx}"),
+            InlineKeyboardButton("🚀 Tezkor nashr",      callback_data=f"quick_publish:{slot_idx}"),
         ],
         [
-            InlineKeyboardButton("✏️ Tahrirlash",       callback_data=f"edit:{slot_idx}"),
+            InlineKeyboardButton("🔄 Qaytaratish",       callback_data=f"regen:{slot_idx}"),
+            InlineKeyboardButton("❌ Otkazish",           callback_data=f"skip:{slot_idx}"),
+        ],
+        [
+            InlineKeyboardButton("✏️ Tahrirlash",        callback_data=f"edit:{slot_idx}"),
         ],
     ])
 
@@ -481,6 +484,42 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action, slot_str = query.data.split(":", 1)
     slot_idx = int(slot_str)
     slot_num = slot_idx + 1
+
+    # --- QUICK PUBLISH — bypass second approver, publish immediately ---
+    if action == "quick_publish":
+        story = _story_slots.get(slot_idx)
+        if not story:
+            await query.edit_message_caption(caption=f"⚠️ Story #{slot_num} topilmadi.")
+            return
+
+        await query.edit_message_caption(
+            caption=f"🚀 *Story #{slot_num} Instagram'ga yuklanmoqda...*",
+            parse_mode="Markdown",
+        )
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename  = OUTPUT_DIR / f"story_{slot_num}_{timestamp}.jpg"
+        filename.write_bytes(story["image_bytes"])
+        logger.info("Story #%d saved (quick publish) → %s", slot_num, filename)
+
+        instagram_ok = False
+        try:
+            instagram_ok = await publish_to_instagram(story["image_bytes"], slot_num)
+        except Exception as e:
+            logger.error("Quick publish Instagram error story #%d: %s", slot_num, e)
+
+        if instagram_ok:
+            await query.edit_message_caption(
+                caption=f"✅ Story Instagram'ga muvaffaqiyatli yuklandi! @zetta_uzbekistan",
+                parse_mode="Markdown",
+            )
+        else:
+            await query.edit_message_caption(
+                caption=f"⚠️ *Story #{slot_num}* saqlandi, lekin Instagram-ga joylashtirishda xatolik.",
+                parse_mode="Markdown",
+            )
+        logger.info("Story #%d quick-published (instagram_ok=%s)", slot_num, instagram_ok)
+        return
 
     # --- APPROVE (step 1) — forward to second approver ---
     if action == "approve":
