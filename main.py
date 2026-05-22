@@ -64,9 +64,6 @@ async def main():
         )
         scheduler_thread.start()
 
-        logger.info("Running immediate story generation...")
-        await run_daily_generation(_app)
-
         logger.info("Bot is polling for callbacks 24/7. Press Ctrl+C to stop.")
         try:
             await asyncio.Event().wait()

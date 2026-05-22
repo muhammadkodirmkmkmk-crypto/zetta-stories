@@ -82,11 +82,13 @@ def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
 
 def _find_font(bold: bool = False, size: int = 40) -> ImageFont.FreeTypeFont:
     _here = os.path.dirname(os.path.abspath(__file__))
+    montserrat_bold = os.path.join(_here, "fonts", "Montserrat-Bold.ttf")
     bundled_bold    = os.path.join(_here, "fonts", "DejaVuSans-Bold.ttf")
     bundled_regular = os.path.join(_here, "fonts", "DejaVuSans.ttf")
 
     candidates = (
         [
+            montserrat_bold,                                           # preferred
             bundled_bold,
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
             "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
@@ -215,7 +217,8 @@ def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
     #   ≤20 chars → 100px, 1 line
     #   >20 chars → 85px, up to 2 lines (split at middle word)
     #   Never exceed 960px wide (60px padding each side)
-    title_upper = title.upper()
+    import re
+    title_upper = re.sub(r'[^\w\s]', '', title).strip().upper()
     MAX_W       = IMAGE_W - 120   # 960px
 
     if len(title_upper) <= 20:
@@ -269,7 +272,10 @@ Faqat JSON qaytargin, hech qanday izoh yo'q:
   "image_prompt": "Detailed English prompt for photorealistic restaurant or business scene related to {feature_name}. Professional photography, warm lighting, elegant interior, staff using technology, no text in image, 4k quality."
 }}
 
-Muhim: title o'zbek tilida, qisqa (maksimal 5-6 so'z), rasmda bir qatorda sig'adigan bo'lsin. image_prompt inglizcha va batafsil bo'lsin. Boshqa maydon kerak emas."""
+Muhim:
+- title o'zbek tilida, qisqa (maksimal 5-6 so'z), rasmda bir qatorda sig'adigan bo'lsin.
+- title ichida HECH QANDAY belgi bo'lmasin: tire (—), nuqta (.), vergul (,), undov (!), savol (?). Faqat oddiy so'zlar.
+- image_prompt inglizcha va batafsil bo'lsin. Boshqa maydon kerak emas."""
 
     response = claude_client.messages.create(
         model="claude-opus-4-5",
