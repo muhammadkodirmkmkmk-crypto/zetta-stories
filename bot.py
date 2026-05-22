@@ -364,22 +364,87 @@ async def generate_fal_image(image_prompt: str) -> bytes:
 # Instagram publishing via instagrapi
 # ---------------------------------------------------------------------------
 
+SESSION_FILE = "/app/instagram_session.json"
+
+
+def _ig_credentials() -> tuple[str, str, str]:
+    """Return (ig_login, ig_user, ig_pass). ig_login is email if set, else username."""
+    ig_pass  = os.environ.get("INSTAGRAM_PASSWORD", "").strip()
+    ig_email = os.environ.get("INSTAGRAM_EMAIL", "").strip()
+    ig_user  = os.environ.get("INSTAGRAM_USERNAME", "").strip()
+    ig_login = ig_email or ig_user
+    return ig_login, ig_user, ig_pass
+
+
+def _ig_fresh_login(cl: "object") -> str | None:  # type: ignore[name-defined]
+    """
+    Login to Instagram with saved session (if exists), falling back to fresh login.
+    Saves session on success.  Returns None on success, error string on failure.
+    """
+    from instagrapi import Client  # noqa: F401 (type hint only)
+    ig_login, ig_user, ig_pass = _ig_credentials()
+
+    if not ig_login or not ig_pass:
+        return "INSTAGRAM_EMAIL (or INSTAGRAM_USERNAME) and INSTAGRAM_PASSWORD must be set in Railway"
+
+    # ── Try loading saved session first ───────────────────────────────────────
+    if os.path.exists(SESSION_FILE):
+        try:
+            cl.load_settings(SESSION_FILE)
+            cl.login(ig_login, ig_pass)   # reuse cookies; just refreshes token
+            cl.get_timeline_feed()        # verify session is actually alive
+            logger.info("Instagram session loaded from %s", SESSION_FILE)
+            return None
+        except Exception as e:
+            logger.warning("Saved session invalid (%s), doing fresh login...", e)
+            try:
+                os.remove(SESSION_FILE)
+            except OSError:
+                pass
+
+    # ── Fresh login ───────────────────────────────────────────────────────────
+    last_err: Exception | None = None
+    for identifier in dict.fromkeys([ig_login, ig_user]):   # deduplicated, order preserved
+        if not identifier:
+            continue
+        try:
+            logger.info("Instagram fresh login with %r...", identifier)
+            cl.login(identifier, ig_pass)
+            cl.dump_settings(SESSION_FILE)
+            logger.info("Instagram login OK — session saved to %s", SESSION_FILE)
+            return None
+        except Exception as e:
+            logger.warning("Login with %r failed: %s", identifier, e)
+            last_err = e
+
+    return f"Instagram login failed: {last_err!r}"
+
+
+def _instagram_login_sync() -> str:
+    """Blocking helper for /login command. Returns status string."""
+    import traceback
+    from instagrapi import Client
+    cl = Client()
+    cl.delay_range = [1, 3]
+    err = _ig_fresh_login(cl)
+    if err:
+        tb = traceback.format_exc()
+        print(f"INSTAGRAM LOGIN ERROR:\n{tb}", flush=True)
+        return f"❌ Login xatolik:\n{err}"
+    ig_login, _, _ = _ig_credentials()
+    return f"✅ Instagram login muvaffaqiyatli!\nIdentifier: {ig_login}\nSession: {SESSION_FILE}"
+
+
 def _instagram_upload_sync(image_bytes: bytes, slot_num: int) -> str | None:
     """
-    Upload story to Instagram.
+    Upload story to Instagram using saved session.
     Returns None on success, or an error string on failure.
     """
     import tempfile
     import time
     from instagrapi import Client
 
-    ig_pass  = os.environ.get("INSTAGRAM_PASSWORD", "").strip()
-    # Instagram login requires email or phone, not @handle.
-    # Prefer INSTAGRAM_EMAIL; fall back to INSTAGRAM_USERNAME (may also be email).
-    ig_email = os.environ.get("INSTAGRAM_EMAIL", "").strip()
-    ig_user  = os.environ.get("INSTAGRAM_USERNAME", "").strip()
-    ig_login = ig_email or ig_user  # first non-empty value
-
+    ig_login, ig_user, ig_pass = _ig_credentials()
     if not ig_login or not ig_pass:
         msg = "INSTAGRAM_EMAIL (or INSTAGRAM_USERNAME) and INSTAGRAM_PASSWORD must be set in Railway environment"
         logger.error(msg)
@@ -399,46 +464,13 @@ def _instagram_upload_sync(image_bytes: bytes, slot_num: int) -> str | None:
         logger.error(msg)
         return msg
 
-    # ── Login (try primary identifier; if that fails try username as fallback) ─
-    def _do_login(client: "Client") -> str | None:  # type: ignore[name-defined]
-        """Returns None on success, error string on failure."""
-        # Attempt 1: use ig_login (email preferred)
-        try:
-            logger.info("Instagram login attempt with %r...", ig_login)
-            client.login(ig_login, ig_pass)
-            logger.info("Instagram login successful (identifier: %r)", ig_login)
-            return None
-        except Exception as e1:
-            logger.warning("Login with %r failed: %s", ig_login, e1)
-
-        # Attempt 2: if we tried email and have a separate username, try that
-        if ig_login != ig_user and ig_user:
-            try:
-                logger.info("Instagram login fallback with username %r...", ig_user)
-                client.login(ig_user, ig_pass)
-                logger.info("Instagram login successful (fallback username)")
-                return None
-            except Exception as e2:
-                logger.error("Login fallback also failed: %s", e2)
-                return f"Login failed — email attempt: {e1!r} | username attempt: {e2!r}"  # noqa: F821
-        return f"Instagram login failed: {e1!r}"  # noqa: F821
-
+    # ── Get authenticated client (session file preferred) ─────────────────────
     cl = Client()
-    login_err = _do_login(cl)
+    cl.delay_range = [1, 3]
+    login_err = _ig_fresh_login(cl)
     if login_err:
+        logger.error("Instagram login failed: %s", login_err)
         return login_err
-
-    # ── Validate session ───────────────────────────────────────────────────────
-    try:
-        cl.get_timeline_feed()
-        logger.info("Instagram session valid")
-    except Exception as e:
-        logger.warning("Session check failed (%s), re-logging in...", e)
-        retry_err = _do_login(cl)
-        if retry_err:
-            msg = f"Instagram re-login failed: {retry_err}"
-            logger.error(msg)
-            return msg
 
     # ── Upload with retry ─────────────────────────────────────────────────────
     def _attempt(attempt_num: int) -> str | None:
@@ -846,8 +878,19 @@ async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"⚠️ Test story xatolik: {e}")
 
 
+async def cmd_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Establish and save Instagram session so future uploads skip fresh login."""
+    if update.effective_user.id != TELEGRAM_USER_ID:
+        return
+    await update.message.reply_text("⏳ Instagram-ga ulanilmoqda...")
+    loop   = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, _instagram_login_sync)
+    await update.message.reply_text(result)
+
+
 def build_application() -> Application:
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    app.add_handler(CommandHandler("login", cmd_login))
     app.add_handler(CommandHandler("test", cmd_test))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
