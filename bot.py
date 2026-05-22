@@ -93,14 +93,15 @@ def _find_font(bold: bool = False, size: int = 40) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
-def _title_font_size(title: str, draw: ImageDraw.ImageDraw, max_width: int) -> int:
-    """Pick the largest font size (110→90) that keeps the title on ONE line."""
-    for size in (110, 100, 90):
-        font = _find_font(bold=True, size=size)
-        bbox = draw.textbbox((0, 0), title.upper(), font=font)
+def _fit_font_size(text: str, draw: ImageDraw.ImageDraw, max_width: int,
+                   sizes: tuple, bold: bool = True) -> int:
+    """Return the largest size from `sizes` whose rendered text fits max_width."""
+    for size in sizes:
+        font = _find_font(bold=bold, size=size)
+        bbox = draw.textbbox((0, 0), text, font=font)
         if (bbox[2] - bbox[0]) <= max_width:
             return size
-    return 90
+    return sizes[-1]
 
 
 def _primary_keyboard(slot_idx: int) -> InlineKeyboardMarkup:
@@ -138,75 +139,62 @@ def _story_caption(slot_num: int, story: dict, suffix: str = "") -> str:
 # Image composition
 # ---------------------------------------------------------------------------
 
-def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
+def compose_story_image(photo_bytes: bytes, title: str, subtitle: str = "") -> bytes:
     # ── 1. Base photo resized to 1080×1920 ───────────────────────────────────
     photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
     photo = photo.resize((IMAGE_W, IMAGE_H), Image.LANCZOS)
 
     red_r, red_g, red_b = _hex_to_rgb(BRAND_RED)
 
-    # ── 2. Red overlay ────────────────────────────────────────────────────────
-    #   0 – 22% (~422px)  : fully opaque solid red  (brand band)
-    #   22% – 32% (~614px): linear fade to transparent
-    #   32%+               : fully transparent — photo dominates
-    SOLID_PCT = 0.22
-    FADE_PCT  = 0.32
-    solid_end = int(IMAGE_H * SOLID_PCT)
-    fade_end  = int(IMAGE_H * FADE_PCT)
-    MAX_ALPHA = 245   # near-opaque in the solid band
+    # ── 2. Smooth cosine gradient — no hard block, blends into photo ─────────
+    #   y=0    → alpha 255  (full red at very top)
+    #   y=700  → alpha 0    (fully transparent, photo shows through)
+    GRAD_PX = 700
+    t_grad  = np.linspace(0.0, 1.0, GRAD_PX, endpoint=True)
+    ease    = (1.0 + np.cos(t_grad * np.pi)) / 2.0   # cosine: 1.0 → 0.0
 
     alpha_arr = np.zeros((IMAGE_H, IMAGE_W), dtype=np.float32)
-    alpha_arr[:solid_end, :] = 1.0
-    grad_h = fade_end - solid_end
-    t = np.linspace(0.0, 1.0, grad_h, endpoint=True)
-    alpha_arr[solid_end:fade_end, :] = (1.0 - t)[:, np.newaxis]   # linear
+    alpha_arr[:GRAD_PX, :] = ease[:, np.newaxis]
 
     overlay_arr = np.zeros((IMAGE_H, IMAGE_W, 4), dtype=np.uint8)
     overlay_arr[:, :, 0] = red_r
     overlay_arr[:, :, 1] = red_g
     overlay_arr[:, :, 2] = red_b
-    overlay_arr[:, :, 3] = (alpha_arr * MAX_ALPHA).astype(np.uint8)
+    overlay_arr[:, :, 3] = (alpha_arr * 255).astype(np.uint8)
 
     overlay = Image.fromarray(overlay_arr, mode="RGBA")
     canvas  = Image.alpha_composite(photo.convert("RGBA"), overlay)
     draw    = ImageDraw.Draw(canvas)
 
-    # ── 3. Brand logo — bold "ZETTA" inside the solid red band ───────────────
-    #   Large, bold, white, left-aligned at x=60, vertically centred in band
-    logo_font = _find_font(bold=True, size=90)
-    logo_text = "ZETTA"
-    logo_y    = (solid_end - 90) // 2     # vertically centred in the red band
-    draw.text((60, logo_y), logo_text, font=logo_font, fill=(255, 255, 255, 255))
+    def _shadow_text(d, xy, text, font, offset=4):
+        """Draw drop-shadow (black) then white text on top."""
+        d.text((xy[0] + offset, xy[1] + offset), text, font=font, fill=(0, 0, 0, 170))
+        d.text(xy, text, font=font, fill=(255, 255, 255, 255))
 
-    # ── 4. Title — just below the red band, large bold white ─────────────────
-    #   Sits on the photo at y ≈ solid_end + 40  (below gradient start)
-    margin_x   = 60
-    max_text_w = IMAGE_W - margin_x * 2
-    size       = _title_font_size(title, draw, max_text_w)
-    title_font = _find_font(bold=True, size=size)
+    # ── 3. ZETTA logo — centered at y=80, 55px, letter-spaced ───────────────
+    logo_font = _find_font(bold=False, size=55)
+    logo_text = "Z E T T A"
+    logo_bbox = draw.textbbox((0, 0), logo_text, font=logo_font)
+    logo_x    = (IMAGE_W - (logo_bbox[2] - logo_bbox[0])) // 2
+    _shadow_text(draw, (logo_x, 80), logo_text, logo_font, offset=3)
+
+    # ── 4. Title — 90–110px bold, left-aligned x=60, y=220 ──────────────────
+    margin_x    = 60
+    max_text_w  = IMAGE_W - margin_x * 2
     title_upper = title.upper()
+    t_size      = _fit_font_size(title_upper, draw, max_text_w, (110, 100, 90, 80), bold=True)
+    title_font  = _find_font(bold=True, size=t_size)
+    _shadow_text(draw, (margin_x, 220), title_upper, title_font, offset=4)
 
-    title_y = solid_end + 50    # just below the solid red band
+    # ── 5. Subtitle — 40px regular, below title ──────────────────────────────
+    if subtitle:
+        t_bbox   = draw.textbbox((margin_x, 220), title_upper, font=title_font)
+        sub_y    = t_bbox[3] + 28
+        sub_size = _fit_font_size(subtitle, draw, max_text_w, (44, 40, 36, 32), bold=False)
+        sub_font = _find_font(bold=False, size=sub_size)
+        _shadow_text(draw, (margin_x, sub_y), subtitle, sub_font, offset=3)
 
-    # Measure text bbox at target position
-    t_bbox = draw.textbbox((margin_x, title_y), title_upper, font=title_font)
-
-    # Semi-transparent dark scrim behind the title for readability (30% black)
-    scrim = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    scrim_draw = ImageDraw.Draw(scrim)
-    pad = 20
-    scrim_draw.rectangle(
-        [0, t_bbox[1] - pad, IMAGE_W, t_bbox[3] + pad],
-        fill=(0, 0, 0, 77),   # 30 % opacity
-    )
-    canvas = Image.alpha_composite(canvas, scrim)
-    draw   = ImageDraw.Draw(canvas)
-
-    # Shadow offset then white text
-    draw.text((margin_x + 4, title_y + 4), title_upper, font=title_font, fill=(0, 0, 0, 140))
-    draw.text((margin_x,     title_y),     title_upper, font=title_font, fill=(255, 255, 255, 255))
-
-    # ── 5. Output — exactly 1080×1920 JPEG ───────────────────────────────────
+    # ── 6. Output — exactly 1080×1920 JPEG ───────────────────────────────────
     result = canvas.convert("RGB")
     assert result.size == (IMAGE_W, IMAGE_H), f"Bad size: {result.size}"
     buf = io.BytesIO()
@@ -359,7 +347,7 @@ async def build_story(feature_name: str, feature_desc: str) -> dict:
     content = await loop.run_in_executor(None, generate_story_content, feature_name, feature_desc)
 
     photo_bytes = await generate_fal_image(content["image_prompt"])
-    composed    = compose_story_image(photo_bytes, content["title"])
+    composed    = compose_story_image(photo_bytes, content["title"], content.get("subtitle", ""))
 
     return {
         "feature_name": feature_name,
@@ -375,7 +363,7 @@ async def build_edited_story(story: dict, edit_request: str) -> dict:
     content = await loop.run_in_executor(None, generate_edited_content, story, edit_request)
 
     photo_bytes = await generate_fal_image(content["image_prompt"])
-    composed    = compose_story_image(photo_bytes, content["title"])
+    composed    = compose_story_image(photo_bytes, content["title"], content.get("subtitle", ""))
 
     return {
         "feature_name": content["feature_name"],
