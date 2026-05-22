@@ -373,11 +373,15 @@ def _instagram_upload_sync(image_bytes: bytes, slot_num: int) -> str | None:
     import time
     from instagrapi import Client
 
-    ig_user = os.environ.get("INSTAGRAM_USERNAME", "").strip()
-    ig_pass = os.environ.get("INSTAGRAM_PASSWORD", "").strip()
+    ig_pass  = os.environ.get("INSTAGRAM_PASSWORD", "").strip()
+    # Instagram login requires email or phone, not @handle.
+    # Prefer INSTAGRAM_EMAIL; fall back to INSTAGRAM_USERNAME (may also be email).
+    ig_email = os.environ.get("INSTAGRAM_EMAIL", "").strip()
+    ig_user  = os.environ.get("INSTAGRAM_USERNAME", "").strip()
+    ig_login = ig_email or ig_user  # first non-empty value
 
-    if not ig_user or not ig_pass:
-        msg = "INSTAGRAM_USERNAME or INSTAGRAM_PASSWORD not set in environment"
+    if not ig_login or not ig_pass:
+        msg = "INSTAGRAM_EMAIL (or INSTAGRAM_USERNAME) and INSTAGRAM_PASSWORD must be set in Railway environment"
         logger.error(msg)
         return msg
 
@@ -395,16 +399,34 @@ def _instagram_upload_sync(image_bytes: bytes, slot_num: int) -> str | None:
         logger.error(msg)
         return msg
 
-    # ── Login ─────────────────────────────────────────────────────────────────
+    # ── Login (try primary identifier; if that fails try username as fallback) ─
+    def _do_login(client: "Client") -> str | None:  # type: ignore[name-defined]
+        """Returns None on success, error string on failure."""
+        # Attempt 1: use ig_login (email preferred)
+        try:
+            logger.info("Instagram login attempt with %r...", ig_login)
+            client.login(ig_login, ig_pass)
+            logger.info("Instagram login successful (identifier: %r)", ig_login)
+            return None
+        except Exception as e1:
+            logger.warning("Login with %r failed: %s", ig_login, e1)
+
+        # Attempt 2: if we tried email and have a separate username, try that
+        if ig_login != ig_user and ig_user:
+            try:
+                logger.info("Instagram login fallback with username %r...", ig_user)
+                client.login(ig_user, ig_pass)
+                logger.info("Instagram login successful (fallback username)")
+                return None
+            except Exception as e2:
+                logger.error("Login fallback also failed: %s", e2)
+                return f"Login failed — email attempt: {e1!r} | username attempt: {e2!r}"  # noqa: F821
+        return f"Instagram login failed: {e1!r}"  # noqa: F821
+
     cl = Client()
-    try:
-        logger.info("Logging in to Instagram as %s...", ig_user)
-        cl.login(ig_user, ig_pass)
-        logger.info("Instagram login successful")
-    except Exception as e:
-        msg = f"Instagram login failed: {e}"
-        logger.error(msg)
-        return msg
+    login_err = _do_login(cl)
+    if login_err:
+        return login_err
 
     # ── Validate session ───────────────────────────────────────────────────────
     try:
@@ -412,11 +434,9 @@ def _instagram_upload_sync(image_bytes: bytes, slot_num: int) -> str | None:
         logger.info("Instagram session valid")
     except Exception as e:
         logger.warning("Session check failed (%s), re-logging in...", e)
-        try:
-            cl.login(ig_user, ig_pass)
-            logger.info("Re-login successful")
-        except Exception as e2:
-            msg = f"Instagram re-login failed: {e2}"
+        retry_err = _do_login(cl)
+        if retry_err:
+            msg = f"Instagram re-login failed: {retry_err}"
             logger.error(msg)
             return msg
 
