@@ -189,7 +189,7 @@ def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
     FADE_H   = 580
     y_idx    = np.arange(IMAGE_H, dtype=np.float32)
     fade     = np.clip((y_idx - SOLID_H) / (FADE_H - SOLID_H), 0.0, 1.0)
-    alpha_1d = np.clip(255.0 * (1.0 - fade), 0, 255).astype(np.uint8)
+    alpha_1d = np.clip(180.0 * (1.0 - fade), 0, 180).astype(np.uint8)
 
     overlay_arr = np.zeros((IMAGE_H, IMAGE_W, 4), dtype=np.uint8)
     overlay_arr[:, :, 0] = 0xA7   # #A70D19
@@ -218,18 +218,18 @@ def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
     MAX_W       = IMAGE_W - 120   # 960px
 
     if len(title_upper) <= 20:
-        t_size = 100
+        t_size = 80
         font   = _find_font(bold=True, size=t_size)
         w      = draw.textbbox((0, 0), title_upper, font=font)[2]
         if w <= MAX_W:
             title_lines = [title_upper]
         else:
-            # still too wide at 100px — drop to 85 and single line
-            t_size = 85
+            # still too wide at 80px — drop to 68 and single line
+            t_size = 68
             font   = _find_font(bold=True, size=t_size)
             title_lines = [title_upper]
     else:
-        t_size = 85
+        t_size = 68
         font   = _find_font(bold=True, size=t_size)
         words  = title_upper.split()
         mid    = max(1, len(words) // 2)
@@ -690,8 +690,25 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 # Application factory
 # ---------------------------------------------------------------------------
 
+async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Generate and send 1 test story for a random iiko feature."""
+    if update.effective_user.id != TELEGRAM_USER_ID:
+        return
+    await update.message.reply_text("⏳ Generating test story...")
+    feature_name, feature_desc = random.choice(IIKO_FEATURES)
+    try:
+        story = await build_story(feature_name, feature_desc)
+        slot_idx = 0
+        _story_slots[slot_idx] = story
+        await send_story_for_approval(context.bot, slot_idx, story, suffix=" (TEST)")
+    except Exception as e:
+        logger.error("Test story error: %s", e)
+        await update.message.reply_text(f"⚠️ Test story xatolik: {e}")
+
+
 def build_application() -> Application:
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    app.add_handler(CommandHandler("test", cmd_test))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
     return app
