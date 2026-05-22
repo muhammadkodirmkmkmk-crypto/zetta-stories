@@ -1,0 +1,519 @@
+import os
+import io
+import json
+import logging
+import asyncio
+import random
+from pathlib import Path
+from datetime import datetime
+
+import anthropic
+import fal_client
+import httpx
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
+
+logging.basicConfig(
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+CLAUDE_API_KEY = os.environ["CLAUDE_API_KEY"]
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+FAL_KEY = os.environ["FAL_KEY"]
+TELEGRAM_USER_ID = int(os.environ["TELEGRAM_USER_ID"])
+
+BRAND_RED = "#A70D19"
+IMAGE_W, IMAGE_H = 1080, 1920
+OUTPUT_DIR = Path("approved_stories")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+IIKO_FEATURES = [
+    ("SmartControl", "real-time phone control"),
+    ("Moliyaviy hisobotlar", "financial reports online"),
+    ("Ombor boshqaruvi", "warehouse management"),
+    ("Xodimlarni boshqarish", "staff management"),
+    ("Mehmonlar sodiqlik tizimi", "loyalty system iikoCard"),
+    ("Yetkazib berish", "iikoDelivery"),
+    ("Kassa iikoFront", "POS system"),
+    ("Tarmoq boshqaruvi", "iikoChain network"),
+    ("Tashqi menyu", "iikoWeb online menu"),
+    ("Hisobotlar 2.0", "advanced analytics"),
+    ("Koll-markaz", "call center"),
+    ("API integratsiya", "third party integrations"),
+    ("Kassa nazorati", "cash control security"),
+    ("Taom tannarxi", "food cost calculation"),
+    ("Franshiza boshqaruvi", "franchise management"),
+]
+
+claude_client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+
+_story_slots: dict[int, dict] = {}
+
+_FONT_BOLD    = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+_FONT_REGULAR = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _pick_features(n: int = 5) -> list[tuple[str, str]]:
+    return random.sample(IIKO_FEATURES, n)
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    hex_color = hex_color.lstrip("#")
+    return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _find_font(bold: bool = False, size: int = 40) -> ImageFont.FreeTypeFont:
+    path = _FONT_BOLD if bold else _FONT_REGULAR
+    fallbacks_bold    = ["/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"]
+    fallbacks_regular = ["/usr/share/fonts/truetype/freefont/FreeSans.ttf"]
+    for candidate in [path] + (fallbacks_bold if bold else fallbacks_regular):
+        if os.path.exists(candidate):
+            try:
+                return ImageFont.truetype(candidate, size)
+            except Exception:
+                continue
+    logger.warning("No TrueType font found, falling back to default")
+    return ImageFont.load_default()
+
+
+def _title_font_size(title: str, draw: ImageDraw.ImageDraw, max_width: int) -> int:
+    """Pick the largest font size (80 or 65) that keeps the title on ONE line."""
+    for size in (80, 65, 50):
+        font = _find_font(bold=True, size=size)
+        bbox = draw.textbbox((0, 0), title.upper(), font=font)
+        if (bbox[2] - bbox[0]) <= max_width:
+            return size
+    return 50
+
+
+def _story_keyboard(slot_idx: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Tasdiqlash",       callback_data=f"approve:{slot_idx}"),
+            InlineKeyboardButton("🔄 Qayta yaratish",  callback_data=f"regen:{slot_idx}"),
+            InlineKeyboardButton("❌ O'tkazib yuborish", callback_data=f"skip:{slot_idx}"),
+        ],
+        [
+            InlineKeyboardButton("✏️ Tahrirlash",      callback_data=f"edit:{slot_idx}"),
+        ],
+    ])
+
+
+def _story_caption(slot_num: int, story: dict, suffix: str = "") -> str:
+    base = (
+        f"📸 *Story #{slot_num}*{suffix}\n\n"
+        f"🏷 *Xususiyat:* {story['feature_name']}\n"
+        f"📝 *Sarlavha:* {story['title']}\n"
+        f"💬 *Taglavha:* {story['subtitle']}"
+    )
+    return base
+
+
+# ---------------------------------------------------------------------------
+# Image composition  (changes 1, 2, 3)
+# ---------------------------------------------------------------------------
+
+def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
+    # 1. Base photo — guaranteed 1080×1920
+    photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
+    photo = photo.resize((IMAGE_W, IMAGE_H), Image.LANCZOS)
+
+    red_r, red_g, red_b = _hex_to_rgb(BRAND_RED)
+
+    # 2. Red overlay — solid top 20%, cosine-fade to transparent by 35%
+    solid_end = int(IMAGE_H * 0.20)
+    fade_end  = int(IMAGE_H * 0.35)
+    MAX_ALPHA = 200  # semi-transparent so photo shows through even in solid zone
+
+    alpha_arr = np.zeros((IMAGE_H, IMAGE_W), dtype=np.float32)
+    alpha_arr[:solid_end, :] = 1.0
+
+    grad_h = fade_end - solid_end
+    t    = np.linspace(0.0, 1.0, grad_h, endpoint=True)
+    ease = (1.0 + np.cos(t * np.pi)) / 2.0   # cosine ease 1 → 0
+    alpha_arr[solid_end:fade_end, :] = ease[:, np.newaxis]
+
+    overlay_arr = np.zeros((IMAGE_H, IMAGE_W, 4), dtype=np.uint8)
+    overlay_arr[:, :, 0] = red_r
+    overlay_arr[:, :, 1] = red_g
+    overlay_arr[:, :, 2] = red_b
+    overlay_arr[:, :, 3] = (alpha_arr * MAX_ALPHA).astype(np.uint8)
+
+    overlay = Image.fromarray(overlay_arr, mode="RGBA")
+    canvas  = Image.alpha_composite(photo.convert("RGBA"), overlay)
+    draw    = ImageDraw.Draw(canvas)
+
+    # 3. Logo — "Z E T T A", thin, white, centered, y=130
+    logo_font = _find_font(bold=False, size=52)
+    logo_text = "Z E T T A"
+    logo_bbox = draw.textbbox((0, 0), logo_text, font=logo_font)
+    logo_w    = logo_bbox[2] - logo_bbox[0]
+    logo_x    = (IMAGE_W - logo_w) // 2
+    draw.text((logo_x, 130), logo_text, font=logo_font, fill=(255, 255, 255, 255))
+
+    # 4. Title — single line, bold, left-aligned x=72, y=255
+    margin_x   = 72
+    max_text_w = IMAGE_W - margin_x * 2
+    size       = _title_font_size(title, draw, max_text_w)
+    title_font = _find_font(bold=True, size=size)
+    draw.text((margin_x, 255), title.upper(), font=title_font, fill=(255, 255, 255, 255))
+
+    # 5. Final output — exactly 1080×1920 JPEG
+    result = canvas.convert("RGB")
+    assert result.size == (IMAGE_W, IMAGE_H), f"Bad size: {result.size}"
+    buf = io.BytesIO()
+    result.save(buf, format="JPEG", quality=95)
+    buf.seek(0)
+    return buf.read()
+
+
+# ---------------------------------------------------------------------------
+# Claude content generation
+# ---------------------------------------------------------------------------
+
+def generate_story_content(feature_name: str, feature_desc: str) -> dict:
+    logger.info("Generating content for feature: %s", feature_name)
+    prompt = f"""Sen Zetta Group uchun Instagram Stories kontent yaratuvchisan.
+Zetta Group — O'zbekistondagi iiko rasmiy hamkori. Restoran biznesini avtomatlashtirish yechimlari.
+
+Quyidagi iiko xususiyati uchun kontent yarat:
+- Xususiyat: {feature_name} ({feature_desc})
+
+Faqat JSON qaytargin, hech qanday izoh yo'q:
+{{
+  "feature_name": "{feature_name}",
+  "title": "KATTA HARFLARDA, MAKSIMAL 5 SO'Z, QISQA VA JOZIBALI SLOGAN",
+  "subtitle": "Maksimal 10 so'z, foyda yoki muammoni hal qilish haqida",
+  "image_prompt": "Detailed English prompt for photorealistic image: Uzbek restaurant or business scene, professional photography, warm lighting, people working, modern interior, no text in image"
+}}
+
+Muhim: title o'zbek tilida bo'lsin, juda qisqa (maksimal 5 so'z). image_prompt inglizcha va batafsil bo'lsin."""
+
+    response = claude_client.messages.create(
+        model="claude-opus-4-5",
+        max_tokens=512,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw  = response.content[0].text.strip().replace("```json", "").replace("```", "").strip()
+    data = json.loads(raw)
+    logger.info("Content generated: %s", data.get("title"))
+    return data
+
+
+def generate_edited_content(story: dict, edit_request: str) -> dict:
+    """Ask Claude to apply the user's edit request to the existing story fields."""
+    logger.info("Editing story with request: %s", edit_request)
+    prompt = f"""Quyidagi Instagram Story kontentini foydalanuvchi so'roviga ko'ra tahrirlash kerak.
+
+Mavjud kontent:
+- feature_name: {story['feature_name']}
+- title: {story['title']}
+- subtitle: {story['subtitle']}
+- image_prompt: {story['image_prompt']}
+
+Foydalanuvchi so'rovi: {edit_request}
+
+Faqat o'zgartirilishi kerak bo'lgan maydonlarni yangilang. O'zgartirilmagan maydonlarni aynan saqlang.
+Faqat JSON qaytargin, hech qanday izoh yo'q:
+{{
+  "feature_name": "...",
+  "title": "KATTA HARFLARDA, MAKSIMAL 5 SO'Z",
+  "subtitle": "Maksimal 10 so'z",
+  "image_prompt": "Detailed English prompt..."
+}}"""
+
+    response = claude_client.messages.create(
+        model="claude-opus-4-5",
+        max_tokens=512,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw  = response.content[0].text.strip().replace("```json", "").replace("```", "").strip()
+    data = json.loads(raw)
+    logger.info("Edited content: %s", data.get("title"))
+    return data
+
+
+# ---------------------------------------------------------------------------
+# fal.ai image generation
+# ---------------------------------------------------------------------------
+
+async def generate_fal_image(image_prompt: str) -> bytes:
+    logger.info("Generating image via fal.ai...")
+    enhanced = (
+        f"{image_prompt}, Uzbekistan restaurant scene, professional commercial photography, "
+        "high quality, 4k, photorealistic, no text, no logos, no watermarks"
+    )
+
+    def _run():
+        return fal_client.run(
+            "fal-ai/flux/schnell",
+            arguments={
+                "prompt": enhanced,
+                "image_size": {"width": IMAGE_W, "height": IMAGE_H},
+                "num_inference_steps": 4,
+                "num_images": 1,
+                "enable_safety_checker": True,
+            },
+        )
+
+    loop   = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, _run)
+
+    image_url = result["images"][0]["url"]
+    logger.info("Image URL received, downloading...")
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.get(image_url)
+        resp.raise_for_status()
+        return resp.content
+
+
+# ---------------------------------------------------------------------------
+# Build / send story
+# ---------------------------------------------------------------------------
+
+async def build_story(feature_name: str, feature_desc: str) -> dict:
+    loop    = asyncio.get_event_loop()
+    content = await loop.run_in_executor(None, generate_story_content, feature_name, feature_desc)
+
+    photo_bytes = await generate_fal_image(content["image_prompt"])
+    composed    = compose_story_image(photo_bytes, content["title"])
+
+    return {
+        "feature_name": feature_name,
+        "title":        content["title"],
+        "subtitle":     content["subtitle"],
+        "image_prompt": content["image_prompt"],
+        "image_bytes":  composed,
+    }
+
+
+async def build_edited_story(story: dict, edit_request: str) -> dict:
+    loop    = asyncio.get_event_loop()
+    content = await loop.run_in_executor(None, generate_edited_content, story, edit_request)
+
+    photo_bytes = await generate_fal_image(content["image_prompt"])
+    composed    = compose_story_image(photo_bytes, content["title"])
+
+    return {
+        "feature_name": content["feature_name"],
+        "title":        content["title"],
+        "subtitle":     content["subtitle"],
+        "image_prompt": content["image_prompt"],
+        "image_bytes":  composed,
+    }
+
+
+async def send_story_for_approval(bot, slot_idx: int, story: dict, suffix: str = ""):
+    slot_num  = slot_idx + 1
+    photo_buf = io.BytesIO(story["image_bytes"])
+    photo_buf.name = f"story_{slot_num}.jpg"
+    photo_buf.seek(0)
+
+    await bot.send_photo(
+        chat_id=TELEGRAM_USER_ID,
+        photo=photo_buf,
+        caption=_story_caption(slot_num, story, suffix),
+        parse_mode="Markdown",
+        reply_markup=_story_keyboard(slot_idx),
+    )
+    logger.info("Story #%d sent for approval%s", slot_num, suffix)
+
+
+# ---------------------------------------------------------------------------
+# Daily generation
+# ---------------------------------------------------------------------------
+
+async def run_daily_generation(app):
+    logger.info("Starting daily story generation...")
+    await app.bot.send_message(
+        chat_id=TELEGRAM_USER_ID,
+        text="🚀 *Bugungi 5 ta Instagram Story yaratilmoqda...*\nBiroz kuting.",
+        parse_mode="Markdown",
+    )
+
+    features = _pick_features(5)
+    _story_slots.clear()
+
+    for slot_idx, (feat_name, feat_desc) in enumerate(features):
+        try:
+            story = await build_story(feat_name, feat_desc)
+            _story_slots[slot_idx] = story
+            await send_story_for_approval(app.bot, slot_idx, story)
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.error("Error building story #%d: %s", slot_idx + 1, e)
+            await app.bot.send_message(
+                chat_id=TELEGRAM_USER_ID,
+                text=f"⚠️ Story #{slot_idx + 1} yaratishda xatolik: {e}",
+            )
+
+
+# ---------------------------------------------------------------------------
+# Callback handler (approve / regen / skip / edit)
+# ---------------------------------------------------------------------------
+
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    action, slot_str = query.data.split(":", 1)
+    slot_idx = int(slot_str)
+    slot_num = slot_idx + 1
+
+    # --- APPROVE ---
+    if action == "approve":
+        story = _story_slots.get(slot_idx)
+        if not story:
+            await query.edit_message_caption(caption=f"⚠️ Story #{slot_num} topilmadi.")
+            return
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename  = OUTPUT_DIR / f"story_{slot_num}_{timestamp}.jpg"
+        filename.write_bytes(story["image_bytes"])
+
+        logger.info("Story #%d approved → %s", slot_num, filename)
+        await query.edit_message_caption(
+            caption=f"✅ *Story #{slot_num} tasdiqlandi!*\nSaqlandi: `{filename.name}`",
+            parse_mode="Markdown",
+        )
+
+    # --- REGENERATE ---
+    elif action == "regen":
+        story        = _story_slots.get(slot_idx)
+        feature_name = story["feature_name"] if story else "Noma'lum"
+        feature_desc = next((f[1] for f in IIKO_FEATURES if f[0] == feature_name), "")
+
+        await query.edit_message_caption(
+            caption=f"🔄 *Story #{slot_num} qayta yaratilmoqda...*",
+            parse_mode="Markdown",
+        )
+        try:
+            new_story = await build_story(feature_name, feature_desc)
+            _story_slots[slot_idx] = new_story
+
+            photo_buf = io.BytesIO(new_story["image_bytes"])
+            photo_buf.name = f"story_{slot_num}_regen.jpg"
+            photo_buf.seek(0)
+
+            await query.delete_message()
+            await context.bot.send_photo(
+                chat_id=TELEGRAM_USER_ID,
+                photo=photo_buf,
+                caption=_story_caption(slot_num, new_story, " _(yangilandi)_"),
+                parse_mode="Markdown",
+                reply_markup=_story_keyboard(slot_idx),
+            )
+        except Exception as e:
+            logger.error("Regen error #%d: %s", slot_num, e)
+            await context.bot.send_message(
+                chat_id=TELEGRAM_USER_ID,
+                text=f"⚠️ Story #{slot_num} qayta yaratishda xatolik: {e}",
+            )
+
+    # --- SKIP ---
+    elif action == "skip":
+        await query.edit_message_caption(
+            caption=f"❌ *Story #{slot_num} o'tkazib yuborildi.*",
+            parse_mode="Markdown",
+        )
+        logger.info("Story #%d skipped", slot_num)
+
+    # --- EDIT ---
+    elif action == "edit":
+        story = _story_slots.get(slot_idx)
+        if not story:
+            await query.edit_message_caption(caption=f"⚠️ Story #{slot_num} topilmadi.")
+            return
+
+        # Store which slot we are editing so the text handler can pick it up
+        context.user_data["awaiting_edit"] = slot_idx
+        logger.info("Edit mode activated for story #%d", slot_num)
+
+        await context.bot.send_message(
+            chat_id=TELEGRAM_USER_ID,
+            text=(
+                f"✏️ *Story #{slot_num} tahrirlash*\n\n"
+                "Qanday o'zgartirish kerak? Masalan:\n"
+                "• _\"Sarlavhani qisqartir\"_\n"
+                "• _\"Rasm promtini restoran oshxonasiga o'zgartir\"_\n"
+                "• _\"Taglavhani ingliz tilida yoz\"_\n\n"
+                "So'rovingizni yozing:"
+            ),
+            parse_mode="Markdown",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Text message handler — receives the edit instruction
+# ---------------------------------------------------------------------------
+
+async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Only respond to messages from the authorised user
+    if update.effective_user.id != TELEGRAM_USER_ID:
+        return
+
+    slot_idx = context.user_data.pop("awaiting_edit", None)
+    if slot_idx is None:
+        return  # Not in edit mode — ignore
+
+    edit_request = update.message.text.strip()
+    slot_num     = slot_idx + 1
+    story        = _story_slots.get(slot_idx)
+
+    if not story:
+        await update.message.reply_text(f"⚠️ Story #{slot_num} topilmadi.")
+        return
+
+    await update.message.reply_text(
+        f"✏️ *Story #{slot_num} tahrirlanmoqda...*\nBiroz kuting.",
+        parse_mode="Markdown",
+    )
+
+    try:
+        edited_story = await build_edited_story(story, edit_request)
+        _story_slots[slot_idx] = edited_story
+
+        photo_buf = io.BytesIO(edited_story["image_bytes"])
+        photo_buf.name = f"story_{slot_num}_edited.jpg"
+        photo_buf.seek(0)
+
+        await context.bot.send_photo(
+            chat_id=TELEGRAM_USER_ID,
+            photo=photo_buf,
+            caption=_story_caption(slot_num, edited_story, " _(tahrirlandi)_"),
+            parse_mode="Markdown",
+            reply_markup=_story_keyboard(slot_idx),
+        )
+        logger.info("Story #%d edited and resent", slot_num)
+
+    except Exception as e:
+        logger.error("Edit error for story #%d: %s", slot_num, e)
+        await update.message.reply_text(
+            f"⚠️ Story #{slot_num} tahrirlashda xatolik: {e}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Application factory
+# ---------------------------------------------------------------------------
+
+def build_application() -> Application:
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+    return app
