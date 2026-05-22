@@ -94,13 +94,13 @@ def _find_font(bold: bool = False, size: int = 40) -> ImageFont.FreeTypeFont:
 
 
 def _title_font_size(title: str, draw: ImageDraw.ImageDraw, max_width: int) -> int:
-    """Pick the largest font size starting from 100px that fits the title on ONE line."""
-    for size in (100, 90, 80, 70):
+    """Pick the largest font size (110→90) that keeps the title on ONE line."""
+    for size in (110, 100, 90):
         font = _find_font(bold=True, size=size)
         bbox = draw.textbbox((0, 0), title.upper(), font=font)
         if (bbox[2] - bbox[0]) <= max_width:
             return size
-    return 70
+    return 90
 
 
 def _primary_keyboard(slot_idx: int) -> InlineKeyboardMarkup:
@@ -145,18 +145,21 @@ def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
 
     red_r, red_g, red_b = _hex_to_rgb(BRAND_RED)
 
-    # 2. Subtle red gradient — solid top 12%, cosine-fade to transparent by 25%
-    solid_end = int(IMAGE_H * 0.12)   # 230px solid
-    fade_end  = int(IMAGE_H * 0.25)   # fades out by 480px
-    MAX_ALPHA = 180                    # keeps photo visible even in solid zone
+    # 2. Red gradient overlay
+    #    0–8%  (~154px): solid red at full MAX_ALPHA
+    #    8–25% (~154–480px): linear fade from MAX_ALPHA → 0
+    #    25%+: completely transparent — clean photo
+    solid_end = int(IMAGE_H * 0.08)   # 154px
+    fade_end  = int(IMAGE_H * 0.25)   # 480px
+    MAX_ALPHA = 210                    # strong solid band at very top
 
     alpha_arr = np.zeros((IMAGE_H, IMAGE_W), dtype=np.float32)
     alpha_arr[:solid_end, :] = 1.0
 
     grad_h = fade_end - solid_end
-    t    = np.linspace(0.0, 1.0, grad_h, endpoint=True)
-    ease = (1.0 + np.cos(t * np.pi)) / 2.0   # cosine ease 1 → 0
-    alpha_arr[solid_end:fade_end, :] = ease[:, np.newaxis]
+    t      = np.linspace(0.0, 1.0, grad_h, endpoint=True)
+    linear = 1.0 - t                           # linear falloff 1 → 0
+    alpha_arr[solid_end:fade_end, :] = linear[:, np.newaxis]
 
     overlay_arr = np.zeros((IMAGE_H, IMAGE_W, 4), dtype=np.uint8)
     overlay_arr[:, :, 0] = red_r
@@ -168,20 +171,40 @@ def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
     canvas  = Image.alpha_composite(photo.convert("RGBA"), overlay)
     draw    = ImageDraw.Draw(canvas)
 
-    # 3. Logo — "Z E T T A", thin, white, centered, y=130
-    logo_font = _find_font(bold=False, size=52)
+    # 3. Logo — "Z E T T A", 40px, white, centered, y=80
+    logo_font = _find_font(bold=False, size=40)
     logo_text = "Z E T T A"
     logo_bbox = draw.textbbox((0, 0), logo_text, font=logo_font)
     logo_w    = logo_bbox[2] - logo_bbox[0]
     logo_x    = (IMAGE_W - logo_w) // 2
-    draw.text((logo_x, 130), logo_text, font=logo_font, fill=(255, 255, 255, 255))
+    draw.text((logo_x, 80), logo_text, font=logo_font, fill=(255, 255, 255, 255))
 
-    # 4. Title — bold, white, left-aligned with 60px margin, 100px minimum
+    # 4. Title — 90–110px bold white, left-aligned x=60, y=200
+    #    Dark semi-transparent strip behind the text for readability on any background
     margin_x   = 60
     max_text_w = IMAGE_W - margin_x * 2
     size       = _title_font_size(title, draw, max_text_w)
     title_font = _find_font(bold=True, size=size)
-    draw.text((margin_x, 240), title.upper(), font=title_font, fill=(255, 255, 255, 255))
+
+    title_upper = title.upper()
+    t_bbox  = draw.textbbox((margin_x, 200), title_upper, font=title_font)
+    pad     = 18
+    strip_y0 = t_bbox[1] - pad
+    strip_y1 = t_bbox[3] + pad
+
+    # Semi-transparent black strip (40% opacity = alpha 102)
+    strip_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    strip_draw  = ImageDraw.Draw(strip_layer)
+    strip_draw.rectangle(
+        [0, strip_y0, IMAGE_W, strip_y1],
+        fill=(0, 0, 0, 102),
+    )
+    canvas = Image.alpha_composite(canvas, strip_layer)
+    draw   = ImageDraw.Draw(canvas)
+
+    # Drop shadow (offset 3, 3) then white text on top
+    draw.text((margin_x + 3, 200 + 3), title_upper, font=title_font, fill=(0, 0, 0, 160))
+    draw.text((margin_x,     200),     title_upper, font=title_font, fill=(255, 255, 255, 255))
 
     # 5. Final output — exactly 1080×1920 JPEG
     result = canvas.convert("RGB")
