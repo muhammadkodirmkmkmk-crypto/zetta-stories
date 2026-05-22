@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python311", "python311Packages.pip", "fontconfig", "dejavu_fonts", "liberation_ttf"]
+nixPkgs = ["python311", "dejavu_fonts"]
 
 [phases.install]
 cmds = ["pip install -r requirements.txt"]
