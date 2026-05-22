@@ -198,26 +198,30 @@ def compose_story_image(photo_bytes: bytes, title: str, subtitle: str = "") -> b
         d.text((x, y), text, font=font, fill=(255, 255, 255, 255))
         return bbox[3] - bbox[1]   # return rendered line height
 
-    # ── 3. Logo "Z E T T A" — centered, y=90, 58px regular ──────────────────
-    logo_font = _find_font(bold=False, size=58)
-    _draw_centered(draw, "Z E T T A", logo_font, y=90)
+    def _draw_left(d, text, font, x, y, shadow_offset=4):
+        """Draw text left-aligned with drop shadow."""
+        d.text((x + shadow_offset, y + shadow_offset), text, font=font, fill=(0, 0, 0, 160))
+        d.text((x, y), text, font=font, fill=(255, 255, 255, 255))
 
-    # ── 4. Title — 95px bold, centered, y=220, max 2 lines ───────────────────
-    title_font  = _find_font(bold=True, size=95)
+    # ── 3. Logo "Z E T T A" — centered, y=100, 65px regular ─────────────────
+    logo_font = _find_font(bold=False, size=65)
+    _draw_centered(draw, "Z E T T A", logo_font, y=100)
+
+    # ── 4. Title — 120px BOLD, left x=60, y=240, max 2 lines, max width 960px
+    title_font  = _find_font(bold=True, size=120)
     title_upper = title.upper()
-    lines       = _wrap_title(title_upper, max_chars=18)
+    lines       = _wrap_title(title_upper, max_chars=16)
 
-    line_h   = 95 + 12   # font size + leading
-    title_y  = 220
-    last_y   = title_y
+    line_h = 120 + 16   # font size + leading
+    last_y = 240
     for line in lines:
-        _draw_centered(draw, line, title_font, y=last_y)
+        _draw_left(draw, line, title_font, x=60, y=last_y, shadow_offset=4)
         last_y += line_h
 
-    # ── 5. Subtitle — 44px regular, centered, 20px below title ───────────────
+    # ── 5. Subtitle — 52px regular, left x=60, 30px below title ─────────────
     if subtitle:
-        sub_font = _find_font(bold=False, size=44)
-        _draw_centered(draw, subtitle, sub_font, y=last_y + 20)
+        sub_font = _find_font(bold=False, size=52)
+        _draw_left(draw, subtitle, sub_font, x=60, y=last_y + 30, shadow_offset=4)
 
     # ── 6. Output — exactly 1080×1920 JPEG ───────────────────────────────────
     result = canvas.convert("RGB")
