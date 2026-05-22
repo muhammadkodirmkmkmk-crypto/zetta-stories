@@ -432,8 +432,11 @@ def _instagram_upload_sync(image_bytes: bytes, slot_num: int) -> str | None:
             logger.info("Story #%d published to Instagram (attempt %d)", slot_num, attempt_num)
             return None      # success
         except Exception as e:
+            import traceback as _tb
+            full_tb = _tb.format_exc()
+            print(f"INSTAGRAM ERROR (attempt {attempt_num}):\n{full_tb}", flush=True)
             logger.error("Instagram upload attempt %d failed: %s — %r", attempt_num, type(e).__name__, str(e))
-            return str(e)
+            return f"{type(e).__name__}: {str(e)}\n\n{full_tb[-500:]}"
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
@@ -575,12 +578,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             await query.edit_message_caption(
-                caption=(
-                    f"⚠️ *Story #{slot_num}* saqlandi, lekin Instagram-ga joylashtirishda xatolik.\n"
-                    f"`{ig_err[:300]}`"
-                ),
-                parse_mode="Markdown",
+                caption=f"⚠️ Story #{slot_num} saqlandi, lekin Instagram-ga joylashtirishda xatolik. Quyida xato matni yuborildi.",
             )
+            error_text = f"❌ Instagram xatolik (Story #{slot_num}):\n{ig_err[:1000]}"
+            await context.bot.send_message(chat_id=TELEGRAM_USER_ID, text=error_text)
         logger.info("Story #%d quick-published (instagram_ok=%s)", slot_num, instagram_ok)
         return
 
@@ -647,16 +648,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if instagram_ok:
             ig_status = "✅ Instagram-ga joylashtirildi!"
         else:
-            ig_status = f"⚠️ Instagram xatolik: `{ig_err[:200]}`"
+            ig_status = "⚠️ Instagram-ga joylashtirishda xatolik. Quyida xato matni yuborildi."
 
         await query.edit_message_caption(
             caption=(
-                f"✅ *Story #{slot_num} tasdiqlandi va saqlandi!*\n"
+                f"✅ Story #{slot_num} tasdiqlandi va saqlandi!\n"
                 f"{ig_status}\n"
-                f"📁 `{filename.name}`"
+                f"Fayl: {filename.name}"
             ),
-            parse_mode="Markdown",
         )
+        if not instagram_ok:
+            error_text = f"❌ Instagram xatolik (Story #{slot_num}):\n{ig_err[:1000]}"
+            await query.get_bot().send_message(chat_id=TELEGRAM_USER_ID, text=error_text)
 
         # Notify the primary user
         await context.bot.send_message(
@@ -749,6 +752,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
             parse_mode="Markdown",
         )
+
+    else:
+        logger.warning("Unknown callback action %r — ignoring (slot=%s)", action, slot_str)
 
 
 # ---------------------------------------------------------------------------
