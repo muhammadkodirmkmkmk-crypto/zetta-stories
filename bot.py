@@ -226,8 +226,9 @@ def compose_story_image(photo_bytes: bytes, title: str, subtitle: str = "") -> b
 
     # ── 4. Title — BOLD, single line, auto-fit, left x=60, y=200 ─────────────
     title_upper = title.upper()
-    max_title_w = IMAGE_W - 60 - 40  # 60px left margin, 40px right padding
-    t_size = 130
+    max_title_w = IMAGE_W - 60 - 40  # 60px left margin, 40px right padding = 980px
+    # Find largest size that fits in one line; default to smallest if nothing fits
+    t_size = 55  # safe fallback — smallest in the list
     for candidate_size in (130, 110, 90, 70, 55):
         test_font = _find_font(bold=True, size=candidate_size)
         bbox = draw.textbbox((0, 0), title_upper, font=test_font)
@@ -235,8 +236,24 @@ def compose_story_image(photo_bytes: bytes, title: str, subtitle: str = "") -> b
             t_size = candidate_size
             break
     title_font = _find_font(bold=True, size=t_size)
-    logger.info("Title font size: %dpx (title len=%d)", t_size, len(title_upper))
-    _draw_left(draw, title_upper, title_font, x=60, y=200, shadow_offset=4)
+    logger.info("Title font size: %dpx (title len=%d, fits=%s)",
+                t_size, len(title_upper), t_size != 55 or draw.textbbox((0,0), title_upper, font=title_font)[2] <= max_title_w)
+
+    # Check if even 55px doesn't fit → wrap into 2 lines by splitting at middle word
+    final_bbox = draw.textbbox((0, 0), title_upper, font=title_font)
+    if final_bbox[2] - final_bbox[0] > max_title_w:
+        words = title_upper.split()
+        mid   = len(words) // 2 or 1
+        lines = [" ".join(words[:mid]), " ".join(words[mid:])]
+        logger.info("Title wrapped to 2 lines at 55px: %s", lines)
+    else:
+        lines = [title_upper]
+
+    line_h = t_size + 12
+    y_pos  = 200
+    for line in lines:
+        _draw_left(draw, line, title_font, x=60, y=y_pos, shadow_offset=4)
+        y_pos += line_h
 
     # ── 6. Output — exactly 1080×1920 JPEG ───────────────────────────────────
     result = canvas.convert("RGB")
