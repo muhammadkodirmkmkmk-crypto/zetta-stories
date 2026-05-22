@@ -364,34 +364,94 @@ async def generate_fal_image(image_prompt: str) -> bytes:
 # Instagram publishing via instagrapi
 # ---------------------------------------------------------------------------
 
-def _instagram_upload_sync(image_bytes: bytes, slot_num: int) -> bool:
+def _instagram_upload_sync(image_bytes: bytes, slot_num: int) -> str | None:
+    """
+    Upload story to Instagram.
+    Returns None on success, or an error string on failure.
+    """
     import tempfile
+    import time
     from instagrapi import Client
 
-    if not INSTAGRAM_USERNAME or not INSTAGRAM_PASSWORD:
-        logger.warning("Instagram credentials not set — skipping publish")
-        return False
+    ig_user = os.environ.get("INSTAGRAM_USERNAME", "").strip()
+    ig_pass = os.environ.get("INSTAGRAM_PASSWORD", "").strip()
 
-    logger.info("Logging in to Instagram as %s...", INSTAGRAM_USERNAME)
-    cl = Client()
-    cl.login(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
-    logger.info("Instagram login successful")
+    if not ig_user or not ig_pass:
+        msg = "INSTAGRAM_USERNAME or INSTAGRAM_PASSWORD not set in environment"
+        logger.error(msg)
+        return msg
 
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-        tmp.write(image_bytes)
-        tmp_path = tmp.name
-
+    # ── Ensure image is valid JPEG at exactly 1080×1920 ───────────────────────
     try:
-        cl.story_upload_photo(tmp_path, caption="")
-        logger.info("Story #%d published to Instagram successfully", slot_num)
-        return True
-    finally:
-        os.unlink(tmp_path)
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        if img.size != (1080, 1920):
+            logger.warning("Resizing image from %s to 1080x1920 for Instagram", img.size)
+            img = img.resize((1080, 1920), Image.LANCZOS)
+        jpeg_buf = io.BytesIO()
+        img.save(jpeg_buf, format="JPEG", quality=95)
+        jpeg_bytes = jpeg_buf.getvalue()
+    except Exception as e:
+        msg = f"Image preparation failed: {e}"
+        logger.error(msg)
+        return msg
+
+    # ── Login ─────────────────────────────────────────────────────────────────
+    cl = Client()
+    try:
+        logger.info("Logging in to Instagram as %s...", ig_user)
+        cl.login(ig_user, ig_pass)
+        logger.info("Instagram login successful")
+    except Exception as e:
+        msg = f"Instagram login failed: {e}"
+        logger.error(msg)
+        return msg
+
+    # ── Validate session ───────────────────────────────────────────────────────
+    try:
+        cl.get_timeline_feed()
+        logger.info("Instagram session valid")
+    except Exception as e:
+        logger.warning("Session check failed (%s), re-logging in...", e)
+        try:
+            cl.login(ig_user, ig_pass)
+            logger.info("Re-login successful")
+        except Exception as e2:
+            msg = f"Instagram re-login failed: {e2}"
+            logger.error(msg)
+            return msg
+
+    # ── Upload with retry ─────────────────────────────────────────────────────
+    def _attempt(attempt_num: int) -> str | None:
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                tmp.write(jpeg_bytes)
+                tmp_path = tmp.name
+            time.sleep(2)   # small delay before upload
+            cl.photo_upload_to_story(tmp_path, caption="")
+            logger.info("Story #%d published to Instagram (attempt %d)", slot_num, attempt_num)
+            return None      # success
+        except Exception as e:
+            logger.error("Instagram upload attempt %d failed: %s — %r", attempt_num, type(e).__name__, str(e))
+            return str(e)
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    err = _attempt(1)
+    if err is not None:
+        logger.warning("Retrying in 5 seconds...")
+        time.sleep(5)
+        err = _attempt(2)
+
+    return err  # None = success, str = error message
 
 
-async def publish_to_instagram(image_bytes: bytes, slot_num: int) -> bool:
+async def publish_to_instagram(image_bytes: bytes, slot_num: int) -> tuple[bool, str]:
+    """Returns (success, error_message). error_message is '' on success."""
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _instagram_upload_sync, image_bytes, slot_num)
+    err  = await loop.run_in_executor(None, _instagram_upload_sync, image_bytes, slot_num)
+    return (err is None), (err or "")
 
 
 # ---------------------------------------------------------------------------
@@ -502,20 +562,23 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         filename.write_bytes(story["image_bytes"])
         logger.info("Story #%d saved (quick publish) → %s", slot_num, filename)
 
-        instagram_ok = False
+        instagram_ok, ig_err = False, "unknown error"
         try:
-            instagram_ok = await publish_to_instagram(story["image_bytes"], slot_num)
+            instagram_ok, ig_err = await publish_to_instagram(story["image_bytes"], slot_num)
         except Exception as e:
+            ig_err = str(e)
             logger.error("Quick publish Instagram error story #%d: %s", slot_num, e)
 
         if instagram_ok:
             await query.edit_message_caption(
-                caption=f"✅ Story Instagram'ga muvaffaqiyatli yuklandi! @zetta_uzbekistan",
-                parse_mode="Markdown",
+                caption="✅ Story Instagram'ga muvaffaqiyatli yuklandi! @zetta_uzbekistan",
             )
         else:
             await query.edit_message_caption(
-                caption=f"⚠️ *Story #{slot_num}* saqlandi, lekin Instagram-ga joylashtirishda xatolik.",
+                caption=(
+                    f"⚠️ *Story #{slot_num}* saqlandi, lekin Instagram-ga joylashtirishda xatolik.\n"
+                    f"`{ig_err[:300]}`"
+                ),
                 parse_mode="Markdown",
             )
         logger.info("Story #%d quick-published (instagram_ok=%s)", slot_num, instagram_ok)
@@ -574,13 +637,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info("Story #%d saved → %s", slot_num, filename)
 
         # Publish to Instagram using stored image bytes
-        instagram_ok = False
+        instagram_ok, ig_err = False, "unknown error"
         try:
-            instagram_ok = await publish_to_instagram(story["image_bytes"], slot_num)
+            instagram_ok, ig_err = await publish_to_instagram(story["image_bytes"], slot_num)
         except Exception as e:
+            ig_err = str(e)
             logger.error("Instagram publish error for story #%d: %s", slot_num, e)
 
-        ig_status = "✅ Instagram-ga joylashtirildi!" if instagram_ok else "⚠️ Instagram-ga joylashtirishda xatolik yoki sozlamalar yo'q."
+        if instagram_ok:
+            ig_status = "✅ Instagram-ga joylashtirildi!"
+        else:
+            ig_status = f"⚠️ Instagram xatolik: `{ig_err[:200]}`"
+
         await query.edit_message_caption(
             caption=(
                 f"✅ *Story #{slot_num} tasdiqlandi va saqlandi!*\n"
