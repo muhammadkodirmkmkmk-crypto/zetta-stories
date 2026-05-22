@@ -139,27 +139,27 @@ def _story_caption(slot_num: int, story: dict, suffix: str = "") -> str:
 # ---------------------------------------------------------------------------
 
 def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
-    # 1. Base photo — guaranteed 1080×1920
+    # ── 1. Base photo resized to 1080×1920 ───────────────────────────────────
     photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
     photo = photo.resize((IMAGE_W, IMAGE_H), Image.LANCZOS)
 
     red_r, red_g, red_b = _hex_to_rgb(BRAND_RED)
 
-    # 2. Red gradient overlay
-    #    0–8%  (~154px): solid red at full MAX_ALPHA
-    #    8–25% (~154–480px): linear fade from MAX_ALPHA → 0
-    #    25%+: completely transparent — clean photo
-    solid_end = int(IMAGE_H * 0.08)   # 154px
-    fade_end  = int(IMAGE_H * 0.25)   # 480px
-    MAX_ALPHA = 210                    # strong solid band at very top
+    # ── 2. Red overlay ────────────────────────────────────────────────────────
+    #   0 – 22% (~422px)  : fully opaque solid red  (brand band)
+    #   22% – 32% (~614px): linear fade to transparent
+    #   32%+               : fully transparent — photo dominates
+    SOLID_PCT = 0.22
+    FADE_PCT  = 0.32
+    solid_end = int(IMAGE_H * SOLID_PCT)
+    fade_end  = int(IMAGE_H * FADE_PCT)
+    MAX_ALPHA = 245   # near-opaque in the solid band
 
     alpha_arr = np.zeros((IMAGE_H, IMAGE_W), dtype=np.float32)
     alpha_arr[:solid_end, :] = 1.0
-
     grad_h = fade_end - solid_end
-    t      = np.linspace(0.0, 1.0, grad_h, endpoint=True)
-    linear = 1.0 - t                           # linear falloff 1 → 0
-    alpha_arr[solid_end:fade_end, :] = linear[:, np.newaxis]
+    t = np.linspace(0.0, 1.0, grad_h, endpoint=True)
+    alpha_arr[solid_end:fade_end, :] = (1.0 - t)[:, np.newaxis]   # linear
 
     overlay_arr = np.zeros((IMAGE_H, IMAGE_W, 4), dtype=np.uint8)
     overlay_arr[:, :, 0] = red_r
@@ -171,42 +171,42 @@ def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
     canvas  = Image.alpha_composite(photo.convert("RGBA"), overlay)
     draw    = ImageDraw.Draw(canvas)
 
-    # 3. Logo — "Z E T T A", 40px, white, centered, y=80
-    logo_font = _find_font(bold=False, size=40)
-    logo_text = "Z E T T A"
-    logo_bbox = draw.textbbox((0, 0), logo_text, font=logo_font)
-    logo_w    = logo_bbox[2] - logo_bbox[0]
-    logo_x    = (IMAGE_W - logo_w) // 2
-    draw.text((logo_x, 80), logo_text, font=logo_font, fill=(255, 255, 255, 255))
+    # ── 3. Brand logo — bold "ZETTA" inside the solid red band ───────────────
+    #   Large, bold, white, left-aligned at x=60, vertically centred in band
+    logo_font = _find_font(bold=True, size=90)
+    logo_text = "ZETTA"
+    logo_y    = (solid_end - 90) // 2     # vertically centred in the red band
+    draw.text((60, logo_y), logo_text, font=logo_font, fill=(255, 255, 255, 255))
 
-    # 4. Title — 90–110px bold white, left-aligned x=60, y=200
-    #    Dark semi-transparent strip behind the text for readability on any background
+    # ── 4. Title — just below the red band, large bold white ─────────────────
+    #   Sits on the photo at y ≈ solid_end + 40  (below gradient start)
     margin_x   = 60
     max_text_w = IMAGE_W - margin_x * 2
     size       = _title_font_size(title, draw, max_text_w)
     title_font = _find_font(bold=True, size=size)
-
     title_upper = title.upper()
-    t_bbox  = draw.textbbox((margin_x, 200), title_upper, font=title_font)
-    pad     = 18
-    strip_y0 = t_bbox[1] - pad
-    strip_y1 = t_bbox[3] + pad
 
-    # Semi-transparent black strip (40% opacity = alpha 102)
-    strip_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    strip_draw  = ImageDraw.Draw(strip_layer)
-    strip_draw.rectangle(
-        [0, strip_y0, IMAGE_W, strip_y1],
-        fill=(0, 0, 0, 102),
+    title_y = solid_end + 50    # just below the solid red band
+
+    # Measure text bbox at target position
+    t_bbox = draw.textbbox((margin_x, title_y), title_upper, font=title_font)
+
+    # Semi-transparent dark scrim behind the title for readability (30% black)
+    scrim = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    scrim_draw = ImageDraw.Draw(scrim)
+    pad = 20
+    scrim_draw.rectangle(
+        [0, t_bbox[1] - pad, IMAGE_W, t_bbox[3] + pad],
+        fill=(0, 0, 0, 77),   # 30 % opacity
     )
-    canvas = Image.alpha_composite(canvas, strip_layer)
+    canvas = Image.alpha_composite(canvas, scrim)
     draw   = ImageDraw.Draw(canvas)
 
-    # Drop shadow (offset 3, 3) then white text on top
-    draw.text((margin_x + 3, 200 + 3), title_upper, font=title_font, fill=(0, 0, 0, 160))
-    draw.text((margin_x,     200),     title_upper, font=title_font, fill=(255, 255, 255, 255))
+    # Shadow offset then white text
+    draw.text((margin_x + 4, title_y + 4), title_upper, font=title_font, fill=(0, 0, 0, 140))
+    draw.text((margin_x,     title_y),     title_upper, font=title_font, fill=(255, 255, 255, 255))
 
-    # 5. Final output — exactly 1080×1920 JPEG
+    # ── 5. Output — exactly 1080×1920 JPEG ───────────────────────────────────
     result = canvas.convert("RGB")
     assert result.size == (IMAGE_W, IMAGE_H), f"Bad size: {result.size}"
     buf = io.BytesIO()
