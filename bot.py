@@ -80,18 +80,22 @@ def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
 
 
 def _find_font(bold: bool = False, size: int = 40) -> ImageFont.FreeTypeFont:
-    hard_paths = (
+    _here = os.path.dirname(os.path.abspath(__file__))
+    bundled_bold    = os.path.join(_here, "fonts", "DejaVuSans-Bold.ttf")
+    bundled_regular = os.path.join(_here, "fonts", "DejaVuSans.ttf")
+
+    candidates = (
         [
+            bundled_bold,
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
             "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
-            "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
         ] if bold else [
+            bundled_regular,
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
         ]
     )
-    for candidate in hard_paths:
+    for candidate in candidates:
         if os.path.exists(candidate):
             try:
                 font = ImageFont.truetype(candidate, size)
@@ -100,27 +104,7 @@ def _find_font(bold: bool = False, size: int = 40) -> ImageFont.FreeTypeFont:
             except Exception:
                 continue
 
-    # NixOS / Railway: use fc-match to find the actual font path
-    import subprocess
-    fc_queries = (
-        ["DejaVu Sans:Bold", "sans-serif:Bold"] if bold
-        else ["DejaVu Sans", "sans-serif"]
-    )
-    for query in fc_queries:
-        try:
-            result = subprocess.run(
-                ["fc-match", "--format=%{file}", query],
-                capture_output=True, text=True, timeout=5,
-            )
-            path = result.stdout.strip()
-            if result.returncode == 0 and path and os.path.exists(path):
-                font = ImageFont.truetype(path, size)
-                logger.info("Font via fc-match (%s): %s @ %dpx", query, path, size)
-                return font
-        except Exception:
-            continue
-
-    logger.error("No TrueType font found — text will be tiny! Install dejavu_fonts + fontconfig on Railway.")
+    logger.error("No TrueType font found — bundled fonts missing? Check fonts/ directory.")
     return ImageFont.load_default()
 
 
