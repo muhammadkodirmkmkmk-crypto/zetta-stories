@@ -4,6 +4,9 @@ import schedule
 import time
 import threading
 
+from telegram import Update
+from telegram.error import Conflict, NetworkError, TimedOut
+
 from bot import run_daily_generation, build_application
 
 logging.basicConfig(
@@ -36,16 +39,32 @@ async def main():
 
     async with _app:
         await _app.start()
-        await _app.updater.start_polling(drop_pending_updates=True)
+
+        # Explicitly delete any existing webhook and drop stale updates
+        # This terminates any other polling session before we start ours
+        logger.info("Deleting existing webhook and clearing pending updates...")
+        await _app.bot.delete_webhook(drop_pending_updates=True)
+
+        # Brief pause to let any other running instance fully release the connection
+        await asyncio.sleep(3)
+
+        logger.info("Starting polling...")
+        await _app.updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES,
+            read_timeout=30,
+            write_timeout=30,
+            connect_timeout=30,
+            pool_timeout=30,
+        )
 
         loop = asyncio.get_event_loop()
-
         scheduler_thread = threading.Thread(
             target=_scheduler_thread, args=(loop,), daemon=True
         )
         scheduler_thread.start()
 
-        logger.info("Bot started — running immediate story generation for testing...")
+        logger.info("Running immediate story generation...")
         await run_daily_generation(_app)
 
         logger.info("Bot is polling for callbacks 24/7. Press Ctrl+C to stop.")
@@ -54,6 +73,7 @@ async def main():
         except (KeyboardInterrupt, SystemExit):
             logger.info("Shutdown signal received")
         finally:
+            logger.info("Stopping polling...")
             await _app.updater.stop()
             await _app.stop()
 
