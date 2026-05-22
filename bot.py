@@ -203,24 +203,36 @@ def compose_story_image(photo_bytes: bytes, title: str, subtitle: str = "") -> b
         d.text((x + shadow_offset, y + shadow_offset), text, font=font, fill=(0, 0, 0, 160))
         d.text((x, y), text, font=font, fill=(255, 255, 255, 255))
 
-    # ── 3. Logo "Z E T T A" — centered, y=100, 65px regular ─────────────────
-    logo_font = _find_font(bold=False, size=65)
+    # ── 3. Logo "Z E T T A" — centered, y=100, 68px regular ─────────────────
+    logo_size = 68
+    logo_font = _find_font(bold=False, size=logo_size)
+    logger.info("Logo font size: %dpx", logo_size)
     _draw_centered(draw, "Z E T T A", logo_font, y=100)
 
-    # ── 4. Title — 120px BOLD, left x=60, y=240, max 2 lines, max width 960px
-    title_font  = _find_font(bold=True, size=120)
+    # ── 4. Title — BOLD, left x=60, y=200 ────────────────────────────────────
+    #   Short title (≤20 chars): 130px, single line
+    #   Long title  (>20 chars): 100px, wrap at 15 chars per line
     title_upper = title.upper()
-    lines       = _wrap_title(title_upper, max_chars=16)
-
-    line_h = 120 + 16   # font size + leading
-    last_y = 240
+    if len(title_upper) <= 20:
+        t_size    = 130
+        max_chars = 20
+    else:
+        t_size    = 100
+        max_chars = 15
+    title_font = _find_font(bold=True, size=t_size)
+    logger.info("Title font size: %dpx (title len=%d)", t_size, len(title_upper))
+    lines  = _wrap_title(title_upper, max_chars=max_chars)
+    line_h = t_size + 16
+    last_y = 200
     for line in lines:
         _draw_left(draw, line, title_font, x=60, y=last_y, shadow_offset=4)
         last_y += line_h
 
-    # ── 5. Subtitle — 52px regular, left x=60, 30px below title ─────────────
+    # ── 5. Subtitle — 55px regular, left x=60, 30px below title ─────────────
     if subtitle:
-        sub_font = _find_font(bold=False, size=52)
+        sub_size = 55
+        sub_font = _find_font(bold=False, size=sub_size)
+        logger.info("Subtitle font size: %dpx", sub_size)
         _draw_left(draw, subtitle, sub_font, x=60, y=last_y + 30, shadow_offset=4)
 
     # ── 6. Output — exactly 1080×1920 JPEG ───────────────────────────────────
@@ -247,12 +259,12 @@ Quyidagi iiko xususiyati uchun kontent yarat:
 Faqat JSON qaytargin, hech qanday izoh yo'q:
 {{
   "feature_name": "{feature_name}",
-  "title": "KATTA HARFLARDA, MAKSIMAL 5 SO'Z, QISQA VA JOZIBALI SLOGAN",
+  "title": "KATTA HARFLARDA, MAKSIMAL 4 SO'Z, JUDA QISQA SLOGAN",
   "subtitle": "Maksimal 10 so'z, foyda yoki muammoni hal qilish haqida",
   "image_prompt": "Detailed English prompt for photorealistic image: Uzbek restaurant or business scene, professional photography, warm lighting, people working, modern interior, no text in image"
 }}
 
-Muhim: title o'zbek tilida bo'lsin, juda qisqa (maksimal 5 so'z). image_prompt inglizcha va batafsil bo'lsin."""
+Muhim: title o'zbek tilida bo'lsin, JUDA qisqa (maksimal 4 so'z) — rasmda BIR QATORDA joylashishi kerak. image_prompt inglizcha va batafsil bo'lsin."""
 
     response = claude_client.messages.create(
         model="claude-opus-4-5",
