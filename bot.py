@@ -27,10 +27,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-CLAUDE_API_KEY = os.environ["CLAUDE_API_KEY"]
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-FAL_KEY = os.environ["FAL_KEY"]
-TELEGRAM_USER_ID = int(os.environ["TELEGRAM_USER_ID"])
+CLAUDE_API_KEY        = os.environ["CLAUDE_API_KEY"]
+TELEGRAM_BOT_TOKEN    = os.environ["TELEGRAM_BOT_TOKEN"]
+FAL_KEY               = os.environ["FAL_KEY"]
+TELEGRAM_USER_ID      = int(os.environ["TELEGRAM_USER_ID"])
+SECOND_APPROVER_ID    = 182606553
+INSTAGRAM_ACCESS_TOKEN = os.environ.get("INSTAGRAM_ACCESS_TOKEN", "")
+INSTAGRAM_ACCOUNT_ID   = os.environ.get("INSTAGRAM_USER_ID", "")
 
 BRAND_RED = "#A70D19"
 IMAGE_W, IMAGE_H = 1080, 1920
@@ -91,40 +94,48 @@ def _find_font(bold: bool = False, size: int = 40) -> ImageFont.FreeTypeFont:
 
 
 def _title_font_size(title: str, draw: ImageDraw.ImageDraw, max_width: int) -> int:
-    """Pick the largest font size (80 or 65) that keeps the title on ONE line."""
-    for size in (80, 65, 50):
+    """Pick the largest font size starting from 100px that fits the title on ONE line."""
+    for size in (100, 90, 80, 70):
         font = _find_font(bold=True, size=size)
         bbox = draw.textbbox((0, 0), title.upper(), font=font)
         if (bbox[2] - bbox[0]) <= max_width:
             return size
-    return 50
+    return 70
 
 
-def _story_keyboard(slot_idx: int) -> InlineKeyboardMarkup:
+def _primary_keyboard(slot_idx: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Tasdiqlash",       callback_data=f"approve:{slot_idx}"),
-            InlineKeyboardButton("🔄 Qayta yaratish",  callback_data=f"regen:{slot_idx}"),
+            InlineKeyboardButton("✅ Tasdiqlash",        callback_data=f"approve:{slot_idx}"),
+            InlineKeyboardButton("🔄 Qayta yaratish",   callback_data=f"regen:{slot_idx}"),
             InlineKeyboardButton("❌ O'tkazib yuborish", callback_data=f"skip:{slot_idx}"),
         ],
         [
-            InlineKeyboardButton("✏️ Tahrirlash",      callback_data=f"edit:{slot_idx}"),
+            InlineKeyboardButton("✏️ Tahrirlash",       callback_data=f"edit:{slot_idx}"),
+        ],
+    ])
+
+
+def _final_approval_keyboard(slot_idx: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Tasdiqlash",  callback_data=f"confirm_final:{slot_idx}"),
+            InlineKeyboardButton("❌ Rad etish",   callback_data=f"reject_final:{slot_idx}"),
         ],
     ])
 
 
 def _story_caption(slot_num: int, story: dict, suffix: str = "") -> str:
-    base = (
+    return (
         f"📸 *Story #{slot_num}*{suffix}\n\n"
         f"🏷 *Xususiyat:* {story['feature_name']}\n"
         f"📝 *Sarlavha:* {story['title']}\n"
         f"💬 *Taglavha:* {story['subtitle']}"
     )
-    return base
 
 
 # ---------------------------------------------------------------------------
-# Image composition  (changes 1, 2, 3)
+# Image composition
 # ---------------------------------------------------------------------------
 
 def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
@@ -134,10 +145,10 @@ def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
 
     red_r, red_g, red_b = _hex_to_rgb(BRAND_RED)
 
-    # 2. Red overlay — solid top 20%, cosine-fade to transparent by 35%
-    solid_end = int(IMAGE_H * 0.20)
-    fade_end  = int(IMAGE_H * 0.35)
-    MAX_ALPHA = 200  # semi-transparent so photo shows through even in solid zone
+    # 2. Subtle red gradient — solid top 12%, cosine-fade to transparent by 25%
+    solid_end = int(IMAGE_H * 0.12)   # 230px solid
+    fade_end  = int(IMAGE_H * 0.25)   # fades out by 480px
+    MAX_ALPHA = 180                    # keeps photo visible even in solid zone
 
     alpha_arr = np.zeros((IMAGE_H, IMAGE_W), dtype=np.float32)
     alpha_arr[:solid_end, :] = 1.0
@@ -165,12 +176,12 @@ def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
     logo_x    = (IMAGE_W - logo_w) // 2
     draw.text((logo_x, 130), logo_text, font=logo_font, fill=(255, 255, 255, 255))
 
-    # 4. Title — single line, bold, left-aligned x=72, y=255
-    margin_x   = 72
+    # 4. Title — bold, white, left-aligned with 60px margin, 100px minimum
+    margin_x   = 60
     max_text_w = IMAGE_W - margin_x * 2
     size       = _title_font_size(title, draw, max_text_w)
     title_font = _find_font(bold=True, size=size)
-    draw.text((margin_x, 255), title.upper(), font=title_font, fill=(255, 255, 255, 255))
+    draw.text((margin_x, 240), title.upper(), font=title_font, fill=(255, 255, 255, 255))
 
     # 5. Final output — exactly 1080×1920 JPEG
     result = canvas.convert("RGB")
@@ -215,7 +226,6 @@ Muhim: title o'zbek tilida bo'lsin, juda qisqa (maksimal 5 so'z). image_prompt i
 
 
 def generate_edited_content(story: dict, edit_request: str) -> dict:
-    """Ask Claude to apply the user's edit request to the existing story fields."""
     logger.info("Editing story with request: %s", edit_request)
     prompt = f"""Quyidagi Instagram Story kontentini foydalanuvchi so'roviga ko'ra tahrirlash kerak.
 
@@ -248,11 +258,11 @@ Faqat JSON qaytargin, hech qanday izoh yo'q:
 
 
 # ---------------------------------------------------------------------------
-# fal.ai image generation
+# fal.ai image generation — flux-pro for photorealistic results
 # ---------------------------------------------------------------------------
 
 async def generate_fal_image(image_prompt: str) -> bytes:
-    logger.info("Generating image via fal.ai...")
+    logger.info("Generating image via fal.ai flux-pro...")
     enhanced = (
         f"{image_prompt}, Uzbekistan restaurant scene, professional commercial photography, "
         "high quality, 4k, photorealistic, no text, no logos, no watermarks"
@@ -260,11 +270,12 @@ async def generate_fal_image(image_prompt: str) -> bytes:
 
     def _run():
         return fal_client.run(
-            "fal-ai/flux/schnell",
+            "fal-ai/flux-pro",
             arguments={
                 "prompt": enhanced,
                 "image_size": {"width": IMAGE_W, "height": IMAGE_H},
-                "num_inference_steps": 4,
+                "num_inference_steps": 28,
+                "guidance_scale": 3.5,
                 "num_images": 1,
                 "enable_safety_checker": True,
             },
@@ -280,6 +291,50 @@ async def generate_fal_image(image_prompt: str) -> bytes:
         resp = await client.get(image_url)
         resp.raise_for_status()
         return resp.content
+
+
+# ---------------------------------------------------------------------------
+# Instagram Graph API publishing
+# ---------------------------------------------------------------------------
+
+async def publish_to_instagram(image_url: str, slot_num: int) -> bool:
+    if not INSTAGRAM_ACCESS_TOKEN or not INSTAGRAM_ACCOUNT_ID:
+        logger.warning("Instagram credentials not set — skipping publish")
+        return False
+
+    graph_url = "https://graph.facebook.com/v19.0"
+    logger.info("Publishing story #%d to Instagram...", slot_num)
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        # Step 1: create media container
+        resp = await client.post(
+            f"{graph_url}/{INSTAGRAM_ACCOUNT_ID}/media",
+            params={
+                "image_url":   image_url,
+                "media_type":  "STORIES",
+                "access_token": INSTAGRAM_ACCESS_TOKEN,
+            },
+        )
+        resp.raise_for_status()
+        creation_id = resp.json().get("id")
+        if not creation_id:
+            logger.error("Instagram container creation failed: %s", resp.text)
+            return False
+
+        logger.info("Instagram container created: %s", creation_id)
+
+        # Step 2: publish the container
+        resp2 = await client.post(
+            f"{graph_url}/{INSTAGRAM_ACCOUNT_ID}/media_publish",
+            params={
+                "creation_id":  creation_id,
+                "access_token": INSTAGRAM_ACCESS_TOKEN,
+            },
+        )
+        resp2.raise_for_status()
+        media_id = resp2.json().get("id")
+        logger.info("Story #%d published to Instagram: media_id=%s", slot_num, media_id)
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -329,7 +384,7 @@ async def send_story_for_approval(bot, slot_idx: int, story: dict, suffix: str =
         photo=photo_buf,
         caption=_story_caption(slot_num, story, suffix),
         parse_mode="Markdown",
-        reply_markup=_story_keyboard(slot_idx),
+        reply_markup=_primary_keyboard(slot_idx),
     )
     logger.info("Story #%d sent for approval%s", slot_num, suffix)
 
@@ -364,7 +419,7 @@ async def run_daily_generation(app):
 
 
 # ---------------------------------------------------------------------------
-# Callback handler (approve / regen / skip / edit)
+# Callback handler
 # ---------------------------------------------------------------------------
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -375,20 +430,105 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     slot_idx = int(slot_str)
     slot_num = slot_idx + 1
 
-    # --- APPROVE ---
+    # --- APPROVE (step 1) — forward to second approver ---
     if action == "approve":
         story = _story_slots.get(slot_idx)
         if not story:
             await query.edit_message_caption(caption=f"⚠️ Story #{slot_num} topilmadi.")
             return
 
+        await query.edit_message_caption(
+            caption=f"⏳ *Story #{slot_num} ikkinchi tasdiqlash uchun yuborildi...*",
+            parse_mode="Markdown",
+        )
+
+        photo_buf = io.BytesIO(story["image_bytes"])
+        photo_buf.name = f"story_{slot_num}_final.jpg"
+        photo_buf.seek(0)
+
+        msg = await context.bot.send_photo(
+            chat_id=SECOND_APPROVER_ID,
+            photo=photo_buf,
+            caption=(
+                f"📋 *Zetta Stories — Tasdiqlash so'rovi*\n\n"
+                f"📸 Story #{slot_num}\n"
+                f"🏷 *Xususiyat:* {story['feature_name']}\n"
+                f"📝 *Sarlavha:* {story['title']}\n"
+                f"💬 *Taglavha:* {story['subtitle']}\n\n"
+                "Instagram Stories-ga joylashtirilsinmi?"
+            ),
+            parse_mode="Markdown",
+            reply_markup=_final_approval_keyboard(slot_idx),
+        )
+
+        # Save Telegram file_id so we can get a public URL for Instagram
+        _story_slots[slot_idx]["telegram_file_id"] = msg.photo[-1].file_id
+        logger.info("Story #%d forwarded to second approver (ID %d)", slot_num, SECOND_APPROVER_ID)
+
+    # --- FINAL CONFIRM (second approver approved) — publish to Instagram ---
+    elif action == "confirm_final":
+        story = _story_slots.get(slot_idx)
+        if not story:
+            await query.edit_message_caption(caption=f"⚠️ Story #{slot_num} topilmadi.")
+            return
+
+        await query.edit_message_caption(
+            caption=f"✅ *Story #{slot_num} tasdiqlandi!* Instagram-ga yuklanmoqda...",
+            parse_mode="Markdown",
+        )
+
+        # Save locally
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename  = OUTPUT_DIR / f"story_{slot_num}_{timestamp}.jpg"
         filename.write_bytes(story["image_bytes"])
+        logger.info("Story #%d saved → %s", slot_num, filename)
 
-        logger.info("Story #%d approved → %s", slot_num, filename)
+        # Get public Telegram URL for Instagram API
+        instagram_ok = False
+        file_id = story.get("telegram_file_id")
+        if file_id:
+            try:
+                tg_file   = await context.bot.get_file(file_id)
+                image_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{tg_file.file_path}"
+                instagram_ok = await publish_to_instagram(image_url, slot_num)
+            except Exception as e:
+                logger.error("Instagram publish error for story #%d: %s", slot_num, e)
+
+        ig_status = "✅ Instagram-ga joylashtirildi!" if instagram_ok else "⚠️ Instagram-ga joylashtirishda xatolik yoki sozlamalar yo'q."
         await query.edit_message_caption(
-            caption=f"✅ *Story #{slot_num} tasdiqlandi!*\nSaqlandi: `{filename.name}`",
+            caption=(
+                f"✅ *Story #{slot_num} tasdiqlandi va saqlandi!*\n"
+                f"{ig_status}\n"
+                f"📁 `{filename.name}`"
+            ),
+            parse_mode="Markdown",
+        )
+
+        # Notify the primary user
+        await context.bot.send_message(
+            chat_id=TELEGRAM_USER_ID,
+            text=(
+                f"✅ *Story #{slot_num} ikkinchi shaxs tomonidan tasdiqlandi!*\n"
+                f"{ig_status}"
+            ),
+            parse_mode="Markdown",
+        )
+
+    # --- FINAL REJECT (second approver rejected) ---
+    elif action == "reject_final":
+        slot_num = slot_idx + 1
+        await query.edit_message_caption(
+            caption=f"❌ *Story #{slot_num} rad etildi.*",
+            parse_mode="Markdown",
+        )
+        logger.info("Story #%d rejected by second approver", slot_num)
+
+        await context.bot.send_message(
+            chat_id=TELEGRAM_USER_ID,
+            text=(
+                f"❌ *Story #{slot_num} ikkinchi shaxs tomonidan rad etildi.*\n"
+                "Qayta yaratish yoki o'tkazib yuborishingiz mumkin."
+            ),
             parse_mode="Markdown",
         )
 
@@ -416,7 +556,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 photo=photo_buf,
                 caption=_story_caption(slot_num, new_story, " _(yangilandi)_"),
                 parse_mode="Markdown",
-                reply_markup=_story_keyboard(slot_idx),
+                reply_markup=_primary_keyboard(slot_idx),
             )
         except Exception as e:
             logger.error("Regen error #%d: %s", slot_num, e)
@@ -440,7 +580,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_caption(caption=f"⚠️ Story #{slot_num} topilmadi.")
             return
 
-        # Store which slot we are editing so the text handler can pick it up
         context.user_data["awaiting_edit"] = slot_idx
         logger.info("Edit mode activated for story #%d", slot_num)
 
@@ -463,13 +602,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------------------------------------------------------------------
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Only respond to messages from the authorised user
-    if update.effective_user.id != TELEGRAM_USER_ID:
+    if update.effective_user.id not in (TELEGRAM_USER_ID, SECOND_APPROVER_ID):
         return
 
     slot_idx = context.user_data.pop("awaiting_edit", None)
     if slot_idx is None:
-        return  # Not in edit mode — ignore
+        return
 
     edit_request = update.message.text.strip()
     slot_num     = slot_idx + 1
@@ -497,7 +635,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             photo=photo_buf,
             caption=_story_caption(slot_num, edited_story, " _(tahrirlandi)_"),
             parse_mode="Markdown",
-            reply_markup=_story_keyboard(slot_idx),
+            reply_markup=_primary_keyboard(slot_idx),
         )
         logger.info("Story #%d edited and resent", slot_num)
 
