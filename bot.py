@@ -146,21 +146,27 @@ def compose_story_image(photo_bytes: bytes, title: str, subtitle: str = "") -> b
 
     red_r, red_g, red_b = _hex_to_rgb(BRAND_RED)
 
-    # ── 2. Smooth cosine gradient — no hard block, blends into photo ─────────
-    #   y=0    → alpha 255  (full red at very top)
-    #   y=700  → alpha 0    (fully transparent, photo shows through)
-    GRAD_PX = 700
-    t_grad  = np.linspace(0.0, 1.0, GRAD_PX, endpoint=True)
-    ease    = (1.0 + np.cos(t_grad * np.pi)) / 2.0   # cosine: 1.0 → 0.0
-
+    # ── 2. Semi-transparent red tint gradient — photo visible everywhere ──────
+    #   Three-stop piecewise linear alpha (NOT a solid block):
+    #     y=0   → alpha 180  (subtle red tint, photo still shows through)
+    #     y=300 → alpha 80
+    #     y=500 → alpha 0    (fully transparent from here down)
     alpha_arr = np.zeros((IMAGE_H, IMAGE_W), dtype=np.float32)
-    alpha_arr[:GRAD_PX, :] = ease[:, np.newaxis]
+
+    # Stop 0→300: 180 → 80
+    seg1 = np.linspace(180, 80, 300, endpoint=False)
+    alpha_arr[:300, :] = seg1[:, np.newaxis]
+
+    # Stop 300→500: 80 → 0
+    seg2 = np.linspace(80, 0, 200, endpoint=True)
+    alpha_arr[300:500, :] = seg2[:, np.newaxis]
+    # 500+ stays 0 (transparent)
 
     overlay_arr = np.zeros((IMAGE_H, IMAGE_W, 4), dtype=np.uint8)
     overlay_arr[:, :, 0] = red_r
     overlay_arr[:, :, 1] = red_g
     overlay_arr[:, :, 2] = red_b
-    overlay_arr[:, :, 3] = (alpha_arr * 255).astype(np.uint8)
+    overlay_arr[:, :, 3] = alpha_arr.astype(np.uint8)
 
     overlay = Image.fromarray(overlay_arr, mode="RGBA")
     canvas  = Image.alpha_composite(photo.convert("RGBA"), overlay)
@@ -190,7 +196,7 @@ def compose_story_image(photo_bytes: bytes, title: str, subtitle: str = "") -> b
     if subtitle:
         t_bbox   = draw.textbbox((margin_x, 220), title_upper, font=title_font)
         sub_y    = t_bbox[3] + 28
-        sub_size = _fit_font_size(subtitle, draw, max_text_w, (44, 40, 36, 32), bold=False)
+        sub_size = _fit_font_size(subtitle, draw, max_text_w, (42, 40, 38, 36), bold=False)
         sub_font = _find_font(bold=False, size=sub_size)
         _shadow_text(draw, (margin_x, sub_y), subtitle, sub_font, offset=3)
 
