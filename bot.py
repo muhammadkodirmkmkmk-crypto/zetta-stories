@@ -803,6 +803,26 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     if update.effective_user.id not in (TELEGRAM_USER_ID, SECOND_APPROVER_ID):
         return
 
+    # ── /session flow: user pasting raw JSON session data ─────────────────────
+    if context.user_data.pop("awaiting_session", False):
+        raw = update.message.text.strip()
+        try:
+            import json as _json
+            data = _json.loads(raw)
+            os.makedirs(os.path.dirname(SESSION_FILE), exist_ok=True)
+            with open(SESSION_FILE, "w", encoding="utf-8") as f:
+                _json.dump(data, f)
+            logger.info("Instagram session saved via /session command → %s", SESSION_FILE)
+            await update.message.reply_text(
+                f"✅ Session saqlandi: {SESSION_FILE}\n"
+                f"Endi /login yuboring — session tekshiriladi va faollashadi."
+            )
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ JSON xatolik: {e}\n\nTo'g'ri JSON formatida yuboring."
+            )
+        return
+
     slot_idx = context.user_data.pop("awaiting_edit", None)
     if slot_idx is None:
         return
@@ -874,8 +894,24 @@ async def cmd_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(result)
 
 
+async def cmd_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Accept manually extracted Instagram session JSON and save it."""
+    if update.effective_user.id != TELEGRAM_USER_ID:
+        return
+    context.user_data["awaiting_session"] = True
+    await update.message.reply_text(
+        "📋 Instagram session JSON-ni yuboring.\n\n"
+        "Telefondan session olish uchun:\n"
+        "1. Kompyuterda instagrapi bilan login qiling\n"
+        "2. cl.dump_settings('session.json') — faylni oching\n"
+        "3. Barcha matnni nusxalab bu yerga yuboring\n\n"
+        "Yoki boshqa usul bilan olingan JSON matnni yuboring:"
+    )
+
+
 def build_application() -> Application:
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    app.add_handler(CommandHandler("session", cmd_session))
     app.add_handler(CommandHandler("login", cmd_login))
     app.add_handler(CommandHandler("test", cmd_test))
     app.add_handler(CallbackQueryHandler(handle_callback))
