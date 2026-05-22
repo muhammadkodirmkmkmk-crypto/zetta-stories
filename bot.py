@@ -146,59 +146,55 @@ def compose_story_image(photo_bytes: bytes, title: str, subtitle: str = "") -> b
 
     red_r, red_g, red_b = _hex_to_rgb(BRAND_RED)
 
-    # ── 2. Semi-transparent red tint gradient — photo visible everywhere ──────
-    #   Three-stop piecewise linear alpha (NOT a solid block):
-    #     y=0   → alpha 180  (subtle red tint, photo still shows through)
-    #     y=300 → alpha 80
-    #     y=500 → alpha 0    (fully transparent from here down)
+    # ── 2. Red gradient — solid top 12% (~230px), cosine-fade to 0 by 25% (~480px)
+    solid_end = int(IMAGE_H * 0.12)   # 230px fully opaque
+    fade_end  = int(IMAGE_H * 0.25)   # 480px fully transparent
+
     alpha_arr = np.zeros((IMAGE_H, IMAGE_W), dtype=np.float32)
+    alpha_arr[:solid_end, :] = 1.0
 
-    # Stop 0→300: 180 → 80
-    seg1 = np.linspace(180, 80, 300, endpoint=False)
-    alpha_arr[:300, :] = seg1[:, np.newaxis]
-
-    # Stop 300→500: 80 → 0
-    seg2 = np.linspace(80, 0, 200, endpoint=True)
-    alpha_arr[300:500, :] = seg2[:, np.newaxis]
-    # 500+ stays 0 (transparent)
+    grad_h = fade_end - solid_end
+    t      = np.linspace(0.0, 1.0, grad_h, endpoint=True)
+    ease   = (1.0 + np.cos(t * np.pi)) / 2.0   # cosine ease 1 → 0
+    alpha_arr[solid_end:fade_end, :] = ease[:, np.newaxis]
 
     overlay_arr = np.zeros((IMAGE_H, IMAGE_W, 4), dtype=np.uint8)
     overlay_arr[:, :, 0] = red_r
     overlay_arr[:, :, 1] = red_g
     overlay_arr[:, :, 2] = red_b
-    overlay_arr[:, :, 3] = alpha_arr.astype(np.uint8)
+    overlay_arr[:, :, 3] = (alpha_arr * 200).astype(np.uint8)   # max alpha 200
 
     overlay = Image.fromarray(overlay_arr, mode="RGBA")
     canvas  = Image.alpha_composite(photo.convert("RGBA"), overlay)
     draw    = ImageDraw.Draw(canvas)
 
-    def _shadow_text(d, xy, text, font, offset=4):
-        """Draw drop-shadow (black) then white text on top."""
-        d.text((xy[0] + offset, xy[1] + offset), text, font=font, fill=(0, 0, 0, 170))
+    def _shadow_text(d, xy, text, font, offset=3):
+        """Drop-shadow then white text."""
+        d.text((xy[0] + offset, xy[1] + offset), text, font=font, fill=(0, 0, 0, 160))
         d.text(xy, text, font=font, fill=(255, 255, 255, 255))
 
-    # ── 3. ZETTA logo — centered at y=80, 55px, letter-spaced ───────────────
+    # ── 3. ZETTA logo — "Z E T T A", 55px, centered, y=60 ───────────────────
     logo_font = _find_font(bold=False, size=55)
     logo_text = "Z E T T A"
     logo_bbox = draw.textbbox((0, 0), logo_text, font=logo_font)
     logo_x    = (IMAGE_W - (logo_bbox[2] - logo_bbox[0])) // 2
-    _shadow_text(draw, (logo_x, 80), logo_text, logo_font, offset=3)
+    _shadow_text(draw, (logo_x, 60), logo_text, logo_font)
 
-    # ── 4. Title — 90–110px bold, left-aligned x=60, y=220 ──────────────────
+    # ── 4. Title — 90–100px bold, left x=60, y=260 ───────────────────────────
     margin_x    = 60
     max_text_w  = IMAGE_W - margin_x * 2
     title_upper = title.upper()
-    t_size      = _fit_font_size(title_upper, draw, max_text_w, (110, 100, 90, 80), bold=True)
+    t_size      = _fit_font_size(title_upper, draw, max_text_w, (100, 90, 80), bold=True)
     title_font  = _find_font(bold=True, size=t_size)
-    _shadow_text(draw, (margin_x, 220), title_upper, title_font, offset=4)
+    _shadow_text(draw, (margin_x, 260), title_upper, title_font, offset=4)
 
-    # ── 5. Subtitle — 40px regular, below title ──────────────────────────────
+    # ── 5. Subtitle — 42px, below title ─────────────────────────────────────
     if subtitle:
-        t_bbox   = draw.textbbox((margin_x, 220), title_upper, font=title_font)
-        sub_y    = t_bbox[3] + 28
+        t_bbox   = draw.textbbox((margin_x, 260), title_upper, font=title_font)
+        sub_y    = t_bbox[3] + 24
         sub_size = _fit_font_size(subtitle, draw, max_text_w, (42, 40, 38, 36), bold=False)
         sub_font = _find_font(bold=False, size=sub_size)
-        _shadow_text(draw, (margin_x, sub_y), subtitle, sub_font, offset=3)
+        _shadow_text(draw, (margin_x, sub_y), subtitle, sub_font)
 
     # ── 6. Output — exactly 1080×1920 JPEG ───────────────────────────────────
     result = canvas.convert("RGB")
