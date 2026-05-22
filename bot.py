@@ -185,12 +185,13 @@ def compose_story_image(photo_bytes: bytes, title: str, subtitle: str = "") -> b
     photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
     photo = photo.resize((IMAGE_W, IMAGE_H), Image.LANCZOS)
 
-    # ── 2. Red gradient overlay, line-by-line alpha ───────────────────────────
-    #   Formula: alpha(y) = int(255 * max(0, 1 - y/730))
-    #   y=0   → 255 (fully opaque),  y=300 → 150,  y=500 → 45,  y=730 → 0
-    GRAD_H   = 730
+    # ── 2. Red gradient overlay ───────────────────────────────────────────────
+    #   Solid red from y=0 to SOLID_H, then linear fade to 0 by FADE_H
+    SOLID_H  = 350    # fully opaque red block
+    FADE_H   = 780    # fully transparent below this
     y_idx    = np.arange(IMAGE_H, dtype=np.float32)
-    alpha_1d = np.clip(255.0 * (1.0 - y_idx / GRAD_H), 0, 255).astype(np.uint8)
+    fade     = np.clip((y_idx - SOLID_H) / (FADE_H - SOLID_H), 0.0, 1.0)
+    alpha_1d = np.clip(255.0 * (1.0 - fade), 0, 255).astype(np.uint8)
 
     overlay_arr = np.zeros((IMAGE_H, IMAGE_W, 4), dtype=np.uint8)
     overlay_arr[:, :, 0] = 167   # red
@@ -218,17 +219,14 @@ def compose_story_image(photo_bytes: bytes, title: str, subtitle: str = "") -> b
         d.text((x + shadow_offset, y + shadow_offset), text, font=font, fill=(0, 0, 0, 160))
         d.text((x, y), text, font=font, fill=(255, 255, 255, 255))
 
-    # ── 3. Logo "Z E T T A" — centered, y=100, 68px regular ─────────────────
-    logo_size = 68
-    logo_font = _find_font(bold=False, size=logo_size)
-    logger.info("Logo font size: %dpx", logo_size)
-    _draw_centered(draw, "Z E T T A", logo_font, y=100)
+    # ── 3. Logo "Z E T T A" — centered, y=80 ─────────────────────────────────
+    logo_font = _find_font(bold=False, size=65)
+    _draw_centered(draw, "Z E T T A", logo_font, y=80)
 
-    # ── 4. Title — BOLD, single line, auto-fit, left x=60, y=200 ─────────────
+    # ── 4. Title — BOLD, centered, auto-fit, single line (wrap at 55px fallback)
     title_upper = title.upper()
-    max_title_w = IMAGE_W - 60 - 40  # 60px left margin, 40px right padding = 980px
-    # Find largest size that fits in one line; default to smallest if nothing fits
-    t_size = 55  # safe fallback — smallest in the list
+    max_title_w = IMAGE_W - 80  # 40px margin each side
+    t_size = 55
     for candidate_size in (130, 110, 90, 70, 55):
         test_font = _find_font(bold=True, size=candidate_size)
         bbox = draw.textbbox((0, 0), title_upper, font=test_font)
@@ -236,24 +234,25 @@ def compose_story_image(photo_bytes: bytes, title: str, subtitle: str = "") -> b
             t_size = candidate_size
             break
     title_font = _find_font(bold=True, size=t_size)
-    logger.info("Title font size: %dpx (title len=%d, fits=%s)",
-                t_size, len(title_upper), t_size != 55 or draw.textbbox((0,0), title_upper, font=title_font)[2] <= max_title_w)
+    logger.info("Title: %dpx, len=%d", t_size, len(title_upper))
 
-    # Check if even 55px doesn't fit → wrap into 2 lines by splitting at middle word
     final_bbox = draw.textbbox((0, 0), title_upper, font=title_font)
     if final_bbox[2] - final_bbox[0] > max_title_w:
         words = title_upper.split()
-        mid   = len(words) // 2 or 1
-        lines = [" ".join(words[:mid]), " ".join(words[mid:])]
-        logger.info("Title wrapped to 2 lines at 55px: %s", lines)
+        mid   = max(1, len(words) // 2)
+        title_lines = [" ".join(words[:mid]), " ".join(words[mid:])]
     else:
-        lines = [title_upper]
+        title_lines = [title_upper]
 
-    line_h = t_size + 12
-    y_pos  = 200
-    for line in lines:
-        _draw_left(draw, line, title_font, x=60, y=y_pos, shadow_offset=4)
-        y_pos += line_h
+    y_pos = 170
+    for line in title_lines:
+        _draw_centered(draw, line, title_font, y=y_pos)
+        y_pos += t_size + 10
+
+    # ── 5. Subtitle — centered, 52px, below title ─────────────────────────────
+    if subtitle:
+        sub_font = _find_font(bold=False, size=52)
+        _draw_centered(draw, subtitle, sub_font, y=y_pos + 20)
 
     # ── 6. Output — exactly 1080×1920 JPEG ───────────────────────────────────
     result = canvas.convert("RGB")
@@ -279,11 +278,12 @@ Quyidagi iiko xususiyati uchun kontent yarat:
 Faqat JSON qaytargin, hech qanday izoh yo'q:
 {{
   "feature_name": "{feature_name}",
-  "title": "KATTA HARFLARDA, MAKSIMAL 4 SO'Z, BITTA QATORDA SIG'ADIGAN SLOGAN",
+  "title": "KATTA HARFLARDA, MAKSIMAL 5 SO'Z, QISQA VA JOZIBALI SLOGAN",
+  "subtitle": "Qisqa foyda jumlasi, maksimal 8 so'z, oddiy harflarda",
   "image_prompt": "Describe a bright, upscale restaurant interior scene related to {feature_name}. Include: elegantly dressed staff (waiter or manager) smiling and using a smartphone or tablet, happy guests at white-tablecloth tables with flowers and wine glasses, large windows with natural daylight flooding the room, warm neutral tones (cream, beige, soft wood), shallow depth of field, professional editorial photography style. The scene must feel premium, modern, and welcoming. No text, no logos, no watermarks in image."
 }}
 
-Muhim: title o'zbek tilida bo'lsin, JUDA qisqa (maksimal 4 so'z) — rasmda BITTA QATORDA joylashishi kerak. Subtitle kerak emas. image_prompt inglizcha va batafsil bo'lsin."""
+Muhim: title o'zbek tilida bo'lsin, qisqa (maksimal 5 so'z). subtitle ham o'zbek tilida, qisqa va foydali. image_prompt inglizcha va batafsil bo'lsin."""
 
     response = claude_client.messages.create(
         model="claude-opus-4-5",
