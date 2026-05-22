@@ -139,62 +139,85 @@ def _story_caption(slot_num: int, story: dict, suffix: str = "") -> str:
 # Image composition
 # ---------------------------------------------------------------------------
 
+def _wrap_title(title: str, max_chars: int = 18) -> list[str]:
+    """Wrap title into at most 2 lines at word boundaries."""
+    words = title.split()
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        test = (current + " " + word).strip() if current else word
+        if len(test) <= max_chars:
+            current = test
+        else:
+            if current:
+                lines.append(current)
+            current = word
+        if len(lines) == 1 and current:
+            # Already have first line — collect rest into second line
+            rest = current + " " + " ".join(
+                words[words.index(word) + 1:]
+            ) if word != words[-1] else current
+            lines.append(rest.strip())
+            break
+    else:
+        if current:
+            lines.append(current)
+    return lines[:2]
+
+
 def compose_story_image(photo_bytes: bytes, title: str, subtitle: str = "") -> bytes:
-    # ── 1. Base photo resized to 1080×1920 ───────────────────────────────────
+    # ── 1. Base photo — fill entire 1080×1920 canvas ─────────────────────────
     photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
     photo = photo.resize((IMAGE_W, IMAGE_H), Image.LANCZOS)
 
-    red_r, red_g, red_b = _hex_to_rgb(BRAND_RED)
-
-    # ── 2. Red gradient — solid top 12% (~230px), cosine-fade to 0 by 25% (~480px)
-    solid_end = int(IMAGE_H * 0.12)   # 230px fully opaque
-    fade_end  = int(IMAGE_H * 0.25)   # 480px fully transparent
-
-    alpha_arr = np.zeros((IMAGE_H, IMAGE_W), dtype=np.float32)
-    alpha_arr[:solid_end, :] = 1.0
-
-    grad_h = fade_end - solid_end
-    t      = np.linspace(0.0, 1.0, grad_h, endpoint=True)
-    ease   = (1.0 + np.cos(t * np.pi)) / 2.0   # cosine ease 1 → 0
-    alpha_arr[solid_end:fade_end, :] = ease[:, np.newaxis]
+    # ── 2. Red gradient overlay, line-by-line alpha ───────────────────────────
+    #   Formula: alpha(y) = int(255 * max(0, 1 - y/730))
+    #   y=0   → 255 (fully opaque),  y=300 → 150,  y=500 → 45,  y=730 → 0
+    GRAD_H   = 730
+    y_idx    = np.arange(IMAGE_H, dtype=np.float32)
+    alpha_1d = np.clip(255.0 * (1.0 - y_idx / GRAD_H), 0, 255).astype(np.uint8)
 
     overlay_arr = np.zeros((IMAGE_H, IMAGE_W, 4), dtype=np.uint8)
-    overlay_arr[:, :, 0] = red_r
-    overlay_arr[:, :, 1] = red_g
-    overlay_arr[:, :, 2] = red_b
-    overlay_arr[:, :, 3] = (alpha_arr * 200).astype(np.uint8)   # max alpha 200
+    overlay_arr[:, :, 0] = 167   # red
+    overlay_arr[:, :, 1] = 13    # green
+    overlay_arr[:, :, 2] = 25    # blue
+    overlay_arr[:, :, 3] = alpha_1d[:, np.newaxis]   # per-row alpha
 
     overlay = Image.fromarray(overlay_arr, mode="RGBA")
     canvas  = Image.alpha_composite(photo.convert("RGBA"), overlay)
     draw    = ImageDraw.Draw(canvas)
 
-    def _shadow_text(d, xy, text, font, offset=3):
-        """Drop-shadow then white text."""
-        d.text((xy[0] + offset, xy[1] + offset), text, font=font, fill=(0, 0, 0, 160))
-        d.text(xy, text, font=font, fill=(255, 255, 255, 255))
+    def _draw_centered(d, text, font, y):
+        """Draw text centered horizontally with drop-shadow."""
+        bbox = d.textbbox((0, 0), text, font=font)
+        w    = bbox[2] - bbox[0]
+        x    = (IMAGE_W - w) // 2
+        # shadow
+        d.text((x + 3, y + 3), text, font=font, fill=(0, 0, 0, 160))
+        # white text
+        d.text((x, y), text, font=font, fill=(255, 255, 255, 255))
+        return bbox[3] - bbox[1]   # return rendered line height
 
-    # ── 3. ZETTA logo — "Z E T T A", 55px, centered, y=60 ───────────────────
-    logo_font = _find_font(bold=False, size=55)
-    logo_text = "Z E T T A"
-    logo_bbox = draw.textbbox((0, 0), logo_text, font=logo_font)
-    logo_x    = (IMAGE_W - (logo_bbox[2] - logo_bbox[0])) // 2
-    _shadow_text(draw, (logo_x, 60), logo_text, logo_font)
+    # ── 3. Logo "Z E T T A" — centered, y=90, 58px regular ──────────────────
+    logo_font = _find_font(bold=False, size=58)
+    _draw_centered(draw, "Z E T T A", logo_font, y=90)
 
-    # ── 4. Title — 90–100px bold, left x=60, y=260 ───────────────────────────
-    margin_x    = 60
-    max_text_w  = IMAGE_W - margin_x * 2
+    # ── 4. Title — 95px bold, centered, y=220, max 2 lines ───────────────────
+    title_font  = _find_font(bold=True, size=95)
     title_upper = title.upper()
-    t_size      = _fit_font_size(title_upper, draw, max_text_w, (100, 90, 80), bold=True)
-    title_font  = _find_font(bold=True, size=t_size)
-    _shadow_text(draw, (margin_x, 260), title_upper, title_font, offset=4)
+    lines       = _wrap_title(title_upper, max_chars=18)
 
-    # ── 5. Subtitle — 42px, below title ─────────────────────────────────────
+    line_h   = 95 + 12   # font size + leading
+    title_y  = 220
+    last_y   = title_y
+    for line in lines:
+        _draw_centered(draw, line, title_font, y=last_y)
+        last_y += line_h
+
+    # ── 5. Subtitle — 44px regular, centered, 20px below title ───────────────
     if subtitle:
-        t_bbox   = draw.textbbox((margin_x, 260), title_upper, font=title_font)
-        sub_y    = t_bbox[3] + 24
-        sub_size = _fit_font_size(subtitle, draw, max_text_w, (42, 40, 38, 36), bold=False)
-        sub_font = _find_font(bold=False, size=sub_size)
-        _shadow_text(draw, (margin_x, sub_y), subtitle, sub_font)
+        sub_font = _find_font(bold=False, size=44)
+        _draw_centered(draw, subtitle, sub_font, y=last_y + 20)
 
     # ── 6. Output — exactly 1080×1920 JPEG ───────────────────────────────────
     result = canvas.convert("RGB")
