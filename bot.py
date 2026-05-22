@@ -261,7 +261,7 @@ Faqat JSON qaytargin, hech qanday izoh yo'q:
   "feature_name": "{feature_name}",
   "title": "KATTA HARFLARDA, MAKSIMAL 4 SO'Z, JUDA QISQA SLOGAN",
   "subtitle": "Maksimal 10 so'z, foyda yoki muammoni hal qilish haqida",
-  "image_prompt": "Detailed English prompt for photorealistic image: Uzbek restaurant or business scene, professional photography, warm lighting, people working, modern interior, no text in image"
+  "image_prompt": "Describe a bright, upscale restaurant interior scene related to {feature_name}. Include: elegantly dressed staff (waiter or manager) smiling and using a smartphone or tablet, happy guests at white-tablecloth tables with flowers and wine glasses, large windows with natural daylight flooding the room, warm neutral tones (cream, beige, soft wood), shallow depth of field, professional editorial photography style. The scene must feel premium, modern, and welcoming. No text, no logos, no watermarks in image."
 }}
 
 Muhim: title o'zbek tilida bo'lsin, JUDA qisqa (maksimal 4 so'z) — rasmda BIR QATORDA joylashishi kerak. image_prompt inglizcha va batafsil bo'lsin."""
@@ -316,8 +316,13 @@ Faqat JSON qaytargin, hech qanday izoh yo'q:
 async def generate_fal_image(image_prompt: str) -> bytes:
     logger.info("Generating image via fal.ai flux-pro...")
     enhanced = (
-        f"{image_prompt}, Uzbekistan restaurant scene, professional commercial photography, "
-        "high quality, 4k, photorealistic, no text, no logos, no watermarks"
+        f"{image_prompt}. "
+        "Style: bright upscale restaurant interior, natural daylight from large windows, "
+        "warm neutral tones (cream, beige, soft wood), elegantly dressed staff smiling, "
+        "happy guests at white-tablecloth tables with flowers and wine glasses, "
+        "shallow depth of field, professional editorial photography, "
+        "high-end magazine quality, 4K, photorealistic, "
+        "no text, no logos, no watermarks, no UI elements"
     )
 
     def _run():
