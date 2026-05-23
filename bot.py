@@ -186,9 +186,10 @@ def _wrap_title(title: str, max_chars: int = 18) -> list[str]:
 
 
 def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
-    # ── 1. Photo fills entire 1080×1920 canvas ───────────────────────────────
+    # ── 1. Photo fills entire 1080×1920 canvas (cover crop, no stretch) ──────
+    from PIL import ImageOps
     photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
-    photo = photo.resize((IMAGE_W, IMAGE_H), Image.LANCZOS)
+    photo = ImageOps.fit(photo, (IMAGE_W, IMAGE_H), method=Image.LANCZOS, centering=(0.5, 0.3))
 
     # ── 2. Red gradient: solid #A70D19 y=0-280, fade to transparent by y=580 ─
     SOLID_H  = 280
@@ -213,10 +214,10 @@ def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
         d.text((x + 3, y + 3), text, font=font, fill=(0, 0, 0, 160))
         d.text((x, y), text, font=font, fill=(255, 255, 255, 255))
 
-    # ── 3. Logo: "Z E T T A", centered, y=85, 60px ───────────────────────────
-    _centered(draw, "Z E T T A", _find_font(bold=False, size=60), y=85)
+    # ── 3. Logo: "Z E T T A", centered, y=186, 60px ──────────────────────────
+    _centered(draw, "Z E T T A", _find_font(bold=False, size=60), y=186)
 
-    # ── 4. Title: bold, centered, y=200 ──────────────────────────────────────
+    # ── 4. Title: bold, centered, y=296 ──────────────────────────────────────
     #   ≤20 chars → 100px, 1 line
     #   >20 chars → 85px, up to 2 lines (split at middle word)
     #   Never exceed 960px wide (60px padding each side)
@@ -243,7 +244,7 @@ def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
         title_lines = [" ".join(words[:mid]), " ".join(words[mid:])]
 
     logger.info("Title: %dpx, lines=%d, text=%s", t_size, len(title_lines), title_lines)
-    y_pos = 200
+    y_pos = 296
     for line in title_lines:
         _centered(draw, line, font, y=y_pos)
         y_pos += t_size + 12
@@ -532,34 +533,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_caption(caption=f"⚠️ Story #{slot_num} topilmadi.")
             return
 
-        await query.edit_message_caption(
-            caption=f"🚀 *Story #{slot_num} Instagram'ga yuklanmoqda...*",
-            parse_mode="Markdown",
-        )
-
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename  = OUTPUT_DIR / f"story_{slot_num}_{timestamp}.jpg"
         filename.write_bytes(story["image_bytes"])
         logger.info("Story #%d saved (quick publish) → %s", slot_num, filename)
 
-        instagram_ok, ig_err = False, "unknown error"
-        try:
-            instagram_ok, ig_err = await publish_to_instagram(story["image_bytes"], slot_num)
-        except Exception as e:
-            ig_err = str(e)
-            logger.error("Quick publish Instagram error story #%d: %s", slot_num, e)
+        await query.edit_message_caption(caption=f"✅ Story #{slot_num} tayyor! Fayl yuborilmoqda...")
 
-        if instagram_ok:
-            await query.edit_message_caption(
-                caption="✅ Story Instagram'ga muvaffaqiyatli yuklandi! @zetta_uzbekistan",
-            )
-        else:
-            await query.edit_message_caption(
-                caption=f"⚠️ Story #{slot_num} saqlandi, lekin Instagram-ga joylashtirishda xatolik. Quyida xato matni yuborildi.",
-            )
-            error_text = f"❌ Instagram xatolik (Story #{slot_num}):\n{ig_err[:1000]}"
-            await context.bot.send_message(chat_id=TELEGRAM_USER_ID, text=error_text)
-        logger.info("Story #%d quick-published (instagram_ok=%s)", slot_num, instagram_ok)
+        doc_buf = io.BytesIO(story["image_bytes"])
+        doc_buf.name = f"story_{slot_num}_{timestamp}.jpg"
+        doc_buf.seek(0)
+        await context.bot.send_document(
+            chat_id=TELEGRAM_USER_ID,
+            document=doc_buf,
+            caption="✅ Story tayyor! Instagram'ga qo'lda yuklang.",
+        )
+        logger.info("Story #%d sent as document (quick publish)", slot_num)
         return
 
     # --- APPROVE (step 1) — forward to second approver ---
@@ -603,10 +592,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_caption(caption=f"⚠️ Story #{slot_num} topilmadi.")
             return
 
-        await query.edit_message_caption(
-            caption=f"✅ *Story #{slot_num} tasdiqlandi!* Instagram-ga yuklanmoqda...",
-            parse_mode="Markdown",
-        )
+        await query.edit_message_caption(caption=f"✅ Story #{slot_num} tasdiqlandi! Fayl yuborilmoqda...")
 
         # Save locally
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -614,39 +600,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         filename.write_bytes(story["image_bytes"])
         logger.info("Story #%d saved → %s", slot_num, filename)
 
-        # Publish to Instagram using stored image bytes
-        instagram_ok, ig_err = False, "unknown error"
-        try:
-            instagram_ok, ig_err = await publish_to_instagram(story["image_bytes"], slot_num)
-        except Exception as e:
-            ig_err = str(e)
-            logger.error("Instagram publish error for story #%d: %s", slot_num, e)
-
-        if instagram_ok:
-            ig_status = "✅ Instagram-ga joylashtirildi!"
-        else:
-            ig_status = "⚠️ Instagram-ga joylashtirishda xatolik. Quyida xato matni yuborildi."
-
-        await query.edit_message_caption(
-            caption=(
-                f"✅ Story #{slot_num} tasdiqlandi va saqlandi!\n"
-                f"{ig_status}\n"
-                f"Fayl: {filename.name}"
-            ),
-        )
-        if not instagram_ok:
-            error_text = f"❌ Instagram xatolik (Story #{slot_num}):\n{ig_err[:1000]}"
-            await query.get_bot().send_message(chat_id=TELEGRAM_USER_ID, text=error_text)
-
-        # Notify the primary user
-        await context.bot.send_message(
+        # Send full-quality image file to primary user
+        doc_buf = io.BytesIO(story["image_bytes"])
+        doc_buf.name = f"story_{slot_num}_{timestamp}.jpg"
+        doc_buf.seek(0)
+        await context.bot.send_document(
             chat_id=TELEGRAM_USER_ID,
-            text=(
-                f"✅ *Story #{slot_num} ikkinchi shaxs tomonidan tasdiqlandi!*\n"
-                f"{ig_status}"
-            ),
-            parse_mode="Markdown",
+            document=doc_buf,
+            caption="✅ Story tayyor! Instagram'ga qo'lda yuklang.",
         )
+        logger.info("Story #%d sent as document to primary user", slot_num)
 
     # --- FINAL REJECT (second approver rejected) ---
     elif action == "reject_final":
