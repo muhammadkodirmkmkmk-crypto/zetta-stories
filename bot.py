@@ -361,137 +361,76 @@ async def generate_fal_image(image_prompt: str) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# Instagram publishing via instagrapi
+# Publishing via Make.com webhook (imgbb → Make.com → Instagram)
 # ---------------------------------------------------------------------------
 
-SESSION_FILE = "/app/instagram_session.json"
+MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/ray8bn6v77mem726aspsk83up95o1x7j"
 
 
-def _ig_fresh_login(cl: "object") -> str | None:  # type: ignore[name-defined]
+def _publish_via_make_sync(image_bytes: bytes, slot_num: int) -> str | None:
     """
-    Login to Instagram with saved session (if exists), falling back to fresh login.
-    Uses INSTAGRAM_PHONE + INSTAGRAM_PASSWORD.
-    Saves session on success. Returns None on success, error string on failure.
-    """
-    ig_phone = os.environ.get("INSTAGRAM_PHONE", "").strip()
-    ig_pass  = os.environ.get("INSTAGRAM_PASSWORD", "").strip()
-
-    if not ig_phone or not ig_pass:
-        return "INSTAGRAM_PHONE and INSTAGRAM_PASSWORD must be set in Railway"
-
-    # ── Try loading saved session first ───────────────────────────────────────
-    if os.path.exists(SESSION_FILE):
-        try:
-            cl.load_settings(SESSION_FILE)
-            cl.login(ig_phone, ig_pass)
-            cl.get_timeline_feed()
-            logger.info("Instagram session loaded from %s", SESSION_FILE)
-            return None
-        except Exception as e:
-            logger.warning("Saved session invalid (%s), doing fresh login...", e)
-            try:
-                os.remove(SESSION_FILE)
-            except OSError:
-                pass
-
-    # ── Fresh login ───────────────────────────────────────────────────────────
-    try:
-        logger.info("Instagram fresh login with phone %r...", ig_phone)
-        cl.login(ig_phone, ig_pass)
-        cl.dump_settings(SESSION_FILE)
-        logger.info("Instagram login OK — session saved to %s", SESSION_FILE)
-        return None
-    except Exception as e:
-        import traceback as _tb
-        print(f"INSTAGRAM LOGIN ERROR:\n{_tb.format_exc()}", flush=True)
-        logger.error("Instagram login failed: %s", e)
-        return f"{type(e).__name__}: {e}"
-
-
-def _instagram_login_sync() -> str:
-    """Blocking helper for /login command. Returns status string."""
-    from instagrapi import Client
-    cl = Client()
-    cl.delay_range = [1, 3]
-    err = _ig_fresh_login(cl)
-    if err:
-        return f"❌ Login xatolik:\n{err}"
-    ig_phone = os.environ.get("INSTAGRAM_PHONE", "")
-    return f"✅ Instagram login muvaffaqiyatli!\nTelefon: {ig_phone}\nSession: {SESSION_FILE}"
-
-
-def _instagram_upload_sync(image_bytes: bytes, slot_num: int) -> str | None:
-    """
-    Upload story to Instagram using saved session.
-    Returns None on success, or an error string on failure.
+    Upload image to imgbb, then POST the URL to Make.com webhook.
+    Returns None on success, error string on failure.
     """
     import tempfile
-    import time
-    from instagrapi import Client
+    import requests
+    import traceback
 
-    ig_phone = os.environ.get("INSTAGRAM_PHONE", "").strip()
-    ig_pass  = os.environ.get("INSTAGRAM_PASSWORD", "").strip()
-    if not ig_phone or not ig_pass:
-        msg = "INSTAGRAM_PHONE and INSTAGRAM_PASSWORD must be set in Railway"
-        logger.error(msg)
-        return msg
+    imgbb_key = os.environ.get("IMGBB_API_KEY", "").strip()
+    if not imgbb_key:
+        return "IMGBB_API_KEY not set in Railway environment"
 
-    # ── Ensure image is valid JPEG at exactly 1080×1920 ───────────────────────
+    # ── Ensure image is JPEG 1080×1920 ───────────────────────────────────────
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         if img.size != (1080, 1920):
-            logger.warning("Resizing image from %s to 1080x1920 for Instagram", img.size)
+            logger.warning("Resizing image from %s to 1080x1920", img.size)
             img = img.resize((1080, 1920), Image.LANCZOS)
         jpeg_buf = io.BytesIO()
         img.save(jpeg_buf, format="JPEG", quality=95)
         jpeg_bytes = jpeg_buf.getvalue()
     except Exception as e:
-        msg = f"Image preparation failed: {e}"
-        logger.error(msg)
-        return msg
+        return f"Image preparation failed: {e}"
 
-    # ── Get authenticated client (session file preferred) ─────────────────────
-    cl = Client()
-    cl.delay_range = [1, 3]
-    login_err = _ig_fresh_login(cl)
-    if login_err:
-        logger.error("Instagram login failed: %s", login_err)
-        return login_err
+    # ── Upload to imgbb ───────────────────────────────────────────────────────
+    try:
+        logger.info("Uploading story #%d to imgbb...", slot_num)
+        resp = requests.post(
+            "https://api.imgbb.com/1/upload",
+            params={"key": imgbb_key},
+            files={"image": ("story.jpg", jpeg_bytes, "image/jpeg")},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        image_url = resp.json()["data"]["url"]
+        logger.info("Story #%d imgbb URL: %s", slot_num, image_url)
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"IMGBB UPLOAD ERROR:\n{tb}", flush=True)
+        return f"imgbb upload failed: {type(e).__name__}: {e}"
 
-    # ── Upload with retry ─────────────────────────────────────────────────────
-    def _attempt(attempt_num: int) -> str | None:
-        tmp_path = None
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-                tmp.write(jpeg_bytes)
-                tmp_path = tmp.name
-            time.sleep(2)   # small delay before upload
-            cl.photo_upload_to_story(tmp_path, caption="")
-            logger.info("Story #%d published to Instagram (attempt %d)", slot_num, attempt_num)
-            return None      # success
-        except Exception as e:
-            import traceback as _tb
-            full_tb = _tb.format_exc()
-            print(f"INSTAGRAM ERROR (attempt {attempt_num}):\n{full_tb}", flush=True)
-            logger.error("Instagram upload attempt %d failed: %s — %r", attempt_num, type(e).__name__, str(e))
-            return f"{type(e).__name__}: {str(e)}\n\n{full_tb[-500:]}"
-        finally:
-            if tmp_path and os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-
-    err = _attempt(1)
-    if err is not None:
-        logger.warning("Retrying in 5 seconds...")
-        time.sleep(5)
-        err = _attempt(2)
-
-    return err  # None = success, str = error message
+    # ── POST to Make.com webhook ──────────────────────────────────────────────
+    try:
+        logger.info("Sending story #%d to Make.com webhook...", slot_num)
+        make_resp = requests.post(
+            MAKE_WEBHOOK_URL,
+            json={"image_url": image_url},
+            timeout=30,
+        )
+        if make_resp.status_code == 200:
+            logger.info("Story #%d accepted by Make.com (200)", slot_num)
+            return None
+        return f"Make.com returned HTTP {make_resp.status_code}: {make_resp.text[:200]}"
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"MAKE WEBHOOK ERROR:\n{tb}", flush=True)
+        return f"Make.com request failed: {type(e).__name__}: {e}"
 
 
 async def publish_to_instagram(image_bytes: bytes, slot_num: int) -> tuple[bool, str]:
     """Returns (success, error_message). error_message is '' on success."""
     loop = asyncio.get_event_loop()
-    err  = await loop.run_in_executor(None, _instagram_upload_sync, image_bytes, slot_num)
+    err  = await loop.run_in_executor(None, _publish_via_make_sync, image_bytes, slot_num)
     return (err is None), (err or "")
 
 
@@ -803,26 +742,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     if update.effective_user.id not in (TELEGRAM_USER_ID, SECOND_APPROVER_ID):
         return
 
-    # ── /session flow: user pasting raw JSON session data ─────────────────────
-    if context.user_data.pop("awaiting_session", False):
-        raw = update.message.text.strip()
-        try:
-            import json as _json
-            data = _json.loads(raw)
-            os.makedirs(os.path.dirname(SESSION_FILE), exist_ok=True)
-            with open(SESSION_FILE, "w", encoding="utf-8") as f:
-                _json.dump(data, f)
-            logger.info("Instagram session saved via /session command → %s", SESSION_FILE)
-            await update.message.reply_text(
-                f"✅ Session saqlandi: {SESSION_FILE}\n"
-                f"Endi /login yuboring — session tekshiriladi va faollashadi."
-            )
-        except Exception as e:
-            await update.message.reply_text(
-                f"❌ JSON xatolik: {e}\n\nTo'g'ri JSON formatida yuboring."
-            )
-        return
-
     slot_idx = context.user_data.pop("awaiting_edit", None)
     if slot_idx is None:
         return
@@ -884,35 +803,8 @@ async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"⚠️ Test story xatolik: {e}")
 
 
-async def cmd_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Establish and save Instagram session so future uploads skip fresh login."""
-    if update.effective_user.id != TELEGRAM_USER_ID:
-        return
-    await update.message.reply_text("⏳ Instagram-ga ulanilmoqda...")
-    loop   = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, _instagram_login_sync)
-    await update.message.reply_text(result)
-
-
-async def cmd_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Accept manually extracted Instagram session JSON and save it."""
-    if update.effective_user.id != TELEGRAM_USER_ID:
-        return
-    context.user_data["awaiting_session"] = True
-    await update.message.reply_text(
-        "📋 Instagram session JSON-ni yuboring.\n\n"
-        "Telefondan session olish uchun:\n"
-        "1. Kompyuterda instagrapi bilan login qiling\n"
-        "2. cl.dump_settings('session.json') — faylni oching\n"
-        "3. Barcha matnni nusxalab bu yerga yuboring\n\n"
-        "Yoki boshqa usul bilan olingan JSON matnni yuboring:"
-    )
-
-
 def build_application() -> Application:
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    app.add_handler(CommandHandler("session", cmd_session))
-    app.add_handler(CommandHandler("login", cmd_login))
     app.add_handler(CommandHandler("test", cmd_test))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
