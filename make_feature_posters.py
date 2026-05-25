@@ -135,9 +135,9 @@ def generate_photo(hint: str) -> bytes:
         "White walls, light blond wooden chairs, white marble tables, lush green indoor plants, "
         "beautifully blurred soft-focus background with shallow depth of field. "
         "Person wears a dark navy apron over a clean white shirt. "
-        "Person is sharp, well-lit, and looks calm and confident. "
-        "Uzbek male appearance, Central Asian features, dark hair, "
-        "clean-shaven or light stubble, aged 30-40. "
+        "Uzbek male, Central Asian features, dark straight hair, clean-shaven, aged 30-40, "
+        "calm confident smile facing camera directly. "
+        "NO headset, NO headphones, NO earpiece, NO earbuds, NO glasses. "
         "Color palette: white, ivory, cream, ash wood tones, deep navy — "
         "absolutely NO red, NO pink, NO dark color grading. "
         "Mood: clean, bright, professional, trustworthy. "
@@ -165,90 +165,74 @@ def generate_photo(hint: str) -> bytes:
 
 
 # ── poster composition ────────────────────────────────────────────────────
-def compose(photo_bytes: bytes, feat: dict,
-            z_logo: Image.Image, i_logo: Image.Image) -> Image.Image:
+def compose(photo_bytes: bytes, feat: dict) -> Image.Image:
+    # ── Photo fills entire frame ──────────────────────────────────────────
+    photo_img = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
+    photo_img = ImageOps.fit(photo_img, (W, H), method=Image.LANCZOS, centering=(0.5, 0.3))
+    canvas    = photo_img.convert("RGBA")
+    draw      = ImageDraw.Draw(canvas)
 
-    # ── canvas (white start) ──────────────────────────────────────────────
-    canvas = Image.new("RGBA", (W, H), (255, 255, 255, 255))
-    draw   = ImageDraw.Draw(canvas)
+    MAX_TW = W - 60   # 640px usable width
+    WHITE  = (255, 255, 255, 255)
 
-    # ── TOP BAR: white 90px ────────────────────────────────────────────────
-    # already white; paste logos
-    pad = 16
-    # ZETTA logo — left side
-    z_y = (TOP_H - z_logo.height) // 2
-    canvas.paste(z_logo, (pad, z_y), z_logo)
-    # iiko logo — right side
-    i_y = (TOP_H - i_logo.height) // 2
-    canvas.paste(i_logo, (W - pad - i_logo.width, i_y), i_logo)
-    # thin separator between logo bar and photo
-    draw.line([(0, TOP_H - 1), (W, TOP_H - 1)], fill=(220, 220, 220, 255), width=1)
-
-    # ── PHOTO: fills y=90..1244 ────────────────────────────────────────────
-    photo_img = Image.open(io.BytesIO(photo_bytes)).convert("RGBA")
-    photo_img = ImageOps.fit(photo_img, (W, H - TOP_H), method=Image.LANCZOS, centering=(0.5, 0.2))
-    canvas.paste(photo_img, (0, TOP_H))
-
-    draw = ImageDraw.Draw(canvas)
-
-    # ── text helpers ────────────────────────────────────────────────────────
-    WHITE   = (255, 255, 255, 255)
-    MAX_TW  = W - 80   # 620px
-
-    def _centered(text, font, y, color=WHITE, shadow_alpha=140):
+    def _centered(text, font, y, color=WHITE, shadow_alpha=170):
         bbox = draw.textbbox((0, 0), text, font=font)
         tw   = bbox[2] - bbox[0]
         x    = (W - tw) // 2
-        draw.text((x + 2, y + 2), text, font=font, fill=(0, 0, 0, shadow_alpha))
+        draw.text((x + 3, y + 3), text, font=font, fill=(0, 0, 0, shadow_alpha))
         draw.text((x, y), text, font=font, fill=color)
 
-    def _fit_font(text, sizes, bold=True):
-        for sz in sizes:
-            f = _font(sz, bold=bold)
-            if draw.textbbox((0, 0), text, font=f)[2] <= MAX_TW:
-                return f, sz
-        return _font(sizes[-1], bold=bold), sizes[-1]
+    # ── TEXT ELEMENT 1: "Z E T T A  ×  iiko" — 3-part logo, top center ──
+    logo_y  = 52
+    f_zetta = _font(38, bold=False)
+    f_sep   = _font(32, bold=False)
+    f_iiko  = _font(38, bold=True)
+    t_zetta, t_sep, t_iiko = "Z E T T A", "  ×  ", "iiko"
+    w_z = draw.textbbox((0, 0), t_zetta, font=f_zetta)[2]
+    w_s = draw.textbbox((0, 0), t_sep,   font=f_sep)[2]
+    w_i = draw.textbbox((0, 0), t_iiko,  font=f_iiko)[2]
+    lx  = (W - w_z - w_s - w_i) // 2
+    SHD      = (0, 0, 0, 130)
+    LOGO_COL = (255, 255, 255, 220)
+    for txt, fnt, col in [(t_zetta, f_zetta, LOGO_COL),
+                          (t_sep,   f_sep,   LOGO_COL),
+                          (t_iiko,  f_iiko,  WHITE)]:
+        draw.text((lx + 2, logo_y + 2), txt, font=fnt, fill=SHD)
+        draw.text((lx,     logo_y),     txt, font=fnt, fill=col)
+        lx += draw.textbbox((0, 0), txt, font=fnt)[2]
 
-    # ── TEXT ELEMENT 1: "ZETTA × iiko" — thin white, top center ───────────
-    #    Sits just inside the photo area, below the logo bar
-    label_y    = TOP_H + 22
-    font_label = _font(22, bold=False)
-    _centered("ZETTA × iiko", font_label, label_y,
-              color=(255, 255, 255, 200), shadow_alpha=120)
+    # ── TEXT ELEMENT 2: Slogan — heavy bold white, CENTER-MIDDLE ─────────
+    #    Floats over person's chest. NO dark strip behind text.
+    words = feat["slogan"].split()
+    mid   = max(1, len(words) // 2)
+    lines = [" ".join(words[:mid]), " ".join(words[mid:])] if len(words) > 3 else [feat["slogan"]]
 
-    # ── TEXT ELEMENT 2: 6-word slogan — bold white, lower third ──────────
-    font_slg, _ = _fit_font(feat["slogan"], (36, 30, 26), bold=True)
-    slg_bbox    = draw.textbbox((0, 0), feat["slogan"], font=font_slg)
-    slg_h       = slg_bbox[3] - slg_bbox[1]
-    slg_y       = H - 120 - slg_h   # anchored near bottom with breathing room
-    # Subtle dark wash behind slogan only (no full-frame overlay)
-    wash_pad = 16
-    wash_box = [0, slg_y - wash_pad, W, slg_y + slg_h + wash_pad]
-    wash_arr = np.zeros((wash_box[3] - wash_box[1], W, 4), dtype=np.uint8)
-    for row in range(wash_arr.shape[0]):
-        t      = row / wash_arr.shape[0]
-        alpha  = int(140 * (1 - abs(t - 0.5) * 2) ** 0.4)
-        wash_arr[row, :, 3] = alpha
-    wash_img = Image.fromarray(wash_arr, "RGBA")
-    canvas.paste(wash_img, (wash_box[0], wash_box[1]), wash_img)
-    draw = ImageDraw.Draw(canvas)   # refresh draw after paste
-    _centered(feat["slogan"], font_slg, slg_y, color=WHITE)
+    font_slg = _font(72, bold=True)
+    for sz in (72, 62, 54, 46):
+        f = _font(sz, bold=True)
+        if all(draw.textbbox((0, 0), ln, font=f)[2] <= MAX_TW for ln in lines):
+            font_slg = f
+            break
+
+    lh      = draw.textbbox((0, 0), lines[0], font=font_slg)[3]
+    gap     = 8
+    total_h = lh * len(lines) + gap * (len(lines) - 1)
+    slg_y   = H // 2 - total_h // 2
+    for line in lines:
+        _centered(line, font_slg, slg_y, color=WHITE, shadow_alpha=210)
+        slg_y += lh + gap
 
     return canvas.convert("RGB")
 
 
 # ── main ──────────────────────────────────────────────────────────────────
 def main():
-    print("Preparing logos …")
-    z_logo, i_logo = _prepare_logos()
-    print(f"  ZETTA logo: {z_logo.size}   iiko logo: {i_logo.size}")
-
     out_paths = []
     for idx, feat in enumerate(FEATURES, 1):
         print(f"\n[{idx}/6] {feat['name']}")
         photo_bytes = generate_photo(feat["hint"])
         print("  Compositing …")
-        poster = compose(photo_bytes, feat, z_logo, i_logo)
+        poster = compose(photo_bytes, feat)
         out_path = os.path.join(ASSETS_DIR, f"poster_{feat['slug']}.jpg")
         poster.save(out_path, format="JPEG", quality=95)
         out_paths.append(out_path)

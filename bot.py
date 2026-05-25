@@ -261,13 +261,13 @@ def compose_story_image(
     canvas = photo.convert("RGBA")
     draw   = ImageDraw.Draw(canvas)
 
-    MAX_W = IMAGE_W - 120   # 960px usable width
+    MAX_W = IMAGE_W - 140   # 940px usable width
     WHITE = (255, 255, 255, 255)
 
-    def _centered(text, font, y, color=WHITE, shadow_alpha=150):
+    def _centered(text, font, y, color=WHITE, shadow_alpha=180):
         bbox = draw.textbbox((0, 0), text, font=font)
         x    = (IMAGE_W - (bbox[2] - bbox[0])) // 2
-        draw.text((x + 3, y + 3), text, font=font, fill=(0, 0, 0, shadow_alpha))
+        draw.text((x + 4, y + 4), text, font=font, fill=(0, 0, 0, shadow_alpha))
         draw.text((x, y), text, font=font, fill=color)
 
     def _fit(text, sizes, bold=True):
@@ -277,30 +277,46 @@ def compose_story_image(
                 return f, sz
         return _find_font(bold=bold, size=sizes[-1]), sizes[-1]
 
-    # ── 2. "ZETTA × iiko" — thin white, top center ───────────────────────────
-    label_y    = 80
-    font_label = _find_font(bold=False, size=44)
-    _centered("ZETTA × iiko", font_label, label_y,
-              color=(255, 255, 255, 210), shadow_alpha=120)
+    # ── 2. Logo: "Z E T T A  ×  iiko" — 3 parts drawn side-by-side ──────────
+    #    ZETTA: thin spaced   ×: medium   iiko: bold
+    logo_y  = 70
+    f_zetta = _find_font(bold=False, size=56)
+    f_sep   = _find_font(bold=False, size=48)
+    f_iiko  = _find_font(bold=True,  size=56)
+    t_zetta, t_sep, t_iiko = "Z E T T A", "  ×  ", "iiko"
+    w_z = draw.textbbox((0, 0), t_zetta, font=f_zetta)[2]
+    w_s = draw.textbbox((0, 0), t_sep,   font=f_sep)[2]
+    w_i = draw.textbbox((0, 0), t_iiko,  font=f_iiko)[2]
+    lx  = (IMAGE_W - w_z - w_s - w_i) // 2
+    LOGO_COL = (255, 255, 255, 220)
+    SHD      = (0, 0, 0, 130)
+    for txt, fnt, col in [(t_zetta, f_zetta, LOGO_COL),
+                          (t_sep,   f_sep,   LOGO_COL),
+                          (t_iiko,  f_iiko,  WHITE)]:
+        draw.text((lx + 3, logo_y + 3), txt, font=fnt, fill=SHD)
+        draw.text((lx,     logo_y),     txt, font=fnt, fill=col)
+        lx += draw.textbbox((0, 0), txt, font=fnt)[2]
 
-    # ── 3. 6-word slogan — bold white, lower third ───────────────────────────
-    font_slg, _ = _fit(slogan, (72, 60, 52, 44), bold=True)
-    slg_bbox    = draw.textbbox((0, 0), slogan, font=font_slg)
-    slg_h       = slg_bbox[3] - slg_bbox[1]
-    slg_y       = IMAGE_H - 200 - slg_h
+    # ── 3. Slogan — heavy bold white, CENTER-MIDDLE of image ─────────────────
+    #    Floats over person's chest area. NO dark strip.
+    words    = slogan.split()
+    mid      = max(1, len(words) // 2)
+    lines    = [" ".join(words[:mid]), " ".join(words[mid:])] if len(words) > 3 else [slogan]
 
-    # Narrow dark wash behind slogan only
-    wash_pad = 24
-    wash_h   = slg_h + wash_pad * 2
-    wash_arr = np.zeros((wash_h, IMAGE_W, 4), dtype=np.uint8)
-    for row in range(wash_h):
-        t     = row / wash_h
-        a     = int(160 * (1 - abs(t - 0.5) * 2) ** 0.35)
-        wash_arr[row, :, 3] = a
-    wash_img = Image.fromarray(wash_arr, "RGBA")
-    canvas.paste(wash_img, (0, slg_y - wash_pad), wash_img)
-    draw = ImageDraw.Draw(canvas)   # refresh after paste
-    _centered(slogan, font_slg, slg_y, color=WHITE)
+    font_slg = _find_font(bold=True, size=110)
+    for sz in (110, 100, 90, 80, 70):
+        f = _find_font(bold=True, size=sz)
+        if all(draw.textbbox((0, 0), ln, font=f)[2] <= MAX_W for ln in lines):
+            font_slg = f
+            break
+
+    lh       = draw.textbbox((0, 0), lines[0], font=font_slg)[3]
+    gap      = 12
+    total_h  = lh * len(lines) + gap * (len(lines) - 1)
+    slg_y    = IMAGE_H // 2 - total_h // 2
+    for line in lines:
+        _centered(line, font_slg, slg_y, color=WHITE, shadow_alpha=200)
+        slg_y += lh + gap
 
     # ── 4. Output ─────────────────────────────────────────────────────────────
     result = canvas.convert("RGB")
@@ -399,6 +415,10 @@ async def generate_fal_image(image_prompt: str) -> bytes:
     logger.info("Generating image via fal.ai flux-pro...")
     enhanced = (
         f"{image_prompt}. "
+        "Uzbek male 30-40, Central Asian features, dark straight hair, clean-shaven, "
+        "calm confident smile facing camera directly. "
+        "Dark navy apron over white shirt. "
+        "NO headset, NO headphones, NO earpiece, NO earbuds, NO glasses. "
         "Bright clean minimal restaurant interior, extremely airy, "
         "large floor-to-ceiling windows flooding scene with soft natural daylight. "
         "White walls, light blond wooden chairs, white marble tables, lush green indoor plants, "
