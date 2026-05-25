@@ -215,9 +215,9 @@ def compose(photo_bytes: bytes, feat: dict) -> Image.Image:
     LOGO_COL = (255, 255, 255, 210)
     SHD      = (0, 0, 0, 130)
 
-    # ── 1. Bottom gradient: solid dark at very bottom → transparent at 75% ─
-    #    Only covers bottom 25% so person is fully visible above the zone.
-    GRAD_H = int(H * 0.25)          # 25% of image height → starts at 75%
+    # ── 1. Bottom gradient: transparent at top → solid dark at bottom ───────
+    #    38% height ensures coverage after text raised by 13%.
+    GRAD_H = int(H * 0.38)          # 38% of 1244 = ~473px → starts at 62%
     g_arr  = np.zeros((GRAD_H, W, 4), dtype=np.uint8)
     for row in range(GRAD_H):
         t = row / max(GRAD_H - 1, 1)  # 0.0 at top of zone, 1.0 at very bottom edge
@@ -241,7 +241,8 @@ def compose(photo_bytes: bytes, feat: dict) -> Image.Image:
     t_zetta, t_sep, t_iiko = "Z E T T A", "  ×  ", "iiko"
 
     logo_h = draw.textbbox((0, 0), t_zetta, font=f_zetta)[3]
-    logo_y = H - logo_h - 38        # 38px from very bottom edge
+    # Raised by 13% of image height above baseline bottom position
+    logo_y = H - logo_h - 38 - int(H * 0.13)
 
     w_z = draw.textbbox((0, 0), t_zetta, font=f_zetta)[2]
     w_s = draw.textbbox((0, 0), t_sep,   font=f_sep)[2]

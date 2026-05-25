@@ -132,8 +132,8 @@ ROLE_STYLES: dict[str, dict] = {
     ROLE_OWNER: {
         "person_desc": (
             "confident Uzbek male restaurant OWNER aged 38-45, dark straight hair, clean-shaven, "
-            "wearing a tailored dark charcoal suit jacket over a bright red apron with ZETTA logo on the side, "
-            "sitting at a sleek desk or standing in a commanding executive posture, "
+            "wearing a tailored dark charcoal suit jacket and white dress shirt, NO apron, "
+            "sitting at a sleek executive desk or standing in a commanding posture, "
             "calm authoritative expression facing camera directly"
         ),
         "background_desc": (
@@ -144,14 +144,14 @@ ROLE_STYLES: dict[str, dict] = {
         ),
         "mood": "professional, successful, premium, authoritative, executive",
         "claude_hint": (
-            "Rol: RESTORAN EGASI (owner). "
+            "Rol: RESTORAN EGASI (owner/boss). "
             "Uslub: elegant, premium, to'q fon, ishbilarmon. "
-            "Shaxs: kostyum va qizil apron kiygan muvaffaqiyatli egasi, stol yonida yoki premium fonda."
+            "Shaxs: qoramtir kostyum va oq ko'ylak (apron yo'q), muvaffaqiyatli egasi, stol yonida yoki premium fonda."
         ),
     },
     ROLE_MANAGER: {
         "person_desc": (
-            "Uzbek male restaurant MANAGER aged 30-40, dark straight hair, clean-shaven, "
+            "Uzbek male restaurant MANAGER or WAITER aged 30-40, dark straight hair, clean-shaven, "
             "bright red apron with ZETTA logo on the side over white shirt, "
             "standing upright holding a tablet or clipboard, observing the dining area, "
             "confident organized posture facing camera directly"
@@ -163,9 +163,9 @@ ROLE_STYLES: dict[str, dict] = {
         ),
         "mood": "organized, in control, energetic, confident, professional",
         "claude_hint": (
-            "Rol: MENEJER (manager). "
+            "Rol: MENEJER yoki OFITSIANT (manager/waiter). "
             "Uslub: yorqin, zamonaviy, tartibli. "
-            "Shaxs: qizil apron, restoran zalida tablet yoki clipboard bilan turgan menejer."
+            "Shaxs: qizil apron va ZETTA logosi, restoran zalida tablet yoki clipboard bilan."
         ),
     },
     ROLE_CHEF: {
@@ -183,7 +183,7 @@ ROLE_STYLES: dict[str, dict] = {
         "claude_hint": (
             "Rol: OSHPAZ / OSHXONA MENEJERI (chef). "
             "Uslub: professional oshxona, po'lat yuzalar, kreativ. "
-            "Shaxs: oq forma va qizil apron kiygan oshpaz, oshxona fonida."
+            "Shaxs: oq oshpaz formasi ustida qizil apron va ZETTA logosi, oshxona fonida."
         ),
     },
 }
@@ -362,9 +362,9 @@ def compose_story_image(
         draw.text((x + 4, y + 4), text, font=font, fill=(0, 0, 0, shadow_alpha))
         draw.text((x, y), text, font=font, fill=color)
 
-    # ── 2. Bottom gradient: solid dark at very bottom → transparent at 75% ──
-    #    Only covers bottom 25% so person is fully visible above the zone.
-    GRAD_H = int(IMAGE_H * 0.25)     # 25% of 1920 = 480px → starts at 75%
+    # ── 2. Bottom gradient: transparent at top → solid dark at bottom ────────
+    #    38% height ensures full gradient coverage after text shift up by 13%.
+    GRAD_H = int(IMAGE_H * 0.38)     # 38% of 1920 = 726px → starts at 62%
     g_arr  = np.zeros((GRAD_H, IMAGE_W, 4), dtype=np.uint8)
     for row in range(GRAD_H):
         t = row / max(GRAD_H - 1, 1)   # 0.0 at top of zone, 1.0 at very bottom edge
@@ -380,7 +380,8 @@ def compose_story_image(
     t_zetta, t_sep, t_iiko = "Z E T T A", "  ×  ", "iiko"
 
     logo_h = draw.textbbox((0, 0), t_zetta, font=f_zetta)[3]
-    logo_y = IMAGE_H - logo_h - 55   # 55px from very bottom edge
+    # Raised by 13% of image height above baseline bottom position
+    logo_y = IMAGE_H - logo_h - 55 - int(IMAGE_H * 0.13)
 
     w_z = draw.textbbox((0, 0), t_zetta, font=f_zetta)[2]
     w_s = draw.textbbox((0, 0), t_sep,   font=f_sep)[2]
