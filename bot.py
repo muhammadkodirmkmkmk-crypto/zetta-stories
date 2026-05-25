@@ -277,7 +277,7 @@ def compose_story_image(
     GRAD_H = int(IMAGE_H * 0.25)     # 25% of 1920 = 480px → starts at 75%
     g_arr  = np.zeros((GRAD_H, IMAGE_W, 4), dtype=np.uint8)
     for row in range(GRAD_H):
-        t = 1.0 - (row / max(GRAD_H - 1, 1))   # 1.0 at bottom, 0.0 at top
+        t = row / max(GRAD_H - 1, 1)   # 0.0 at top of zone, 1.0 at very bottom edge
         g_arr[row, :, 3] = int(235 * (t ** 0.5))
     g_img = Image.fromarray(g_arr, "RGBA")
     canvas.paste(g_img, (0, IMAGE_H - GRAD_H), g_img)
@@ -303,9 +303,9 @@ def compose_story_image(
         draw.text((lx,     logo_y),     txt, font=fnt, fill=col)
         lx += draw.textbbox((0, 0), txt, font=fnt)[2]
 
-    # ── 4. Slogan — bold white, DIRECTLY ABOVE LOGO ───────────────────────────
+    # ── 4. Slogan — bold white CAPS, ABOVE LOGO ───────────────────────────────
     #    Always 2 lines. Font auto-sizes until both lines fit MAX_W.
-    words = slogan.split()
+    words = slogan.upper().split()
     mid   = max(1, len(words) // 2)
     lines = [" ".join(words[:mid]), " ".join(words[mid:])]
 
@@ -319,7 +319,7 @@ def compose_story_image(
     lh      = draw.textbbox((0, 0), lines[0], font=font_slg)[3]
     gap     = 16
     total_h = lh * len(lines) + gap * (len(lines) - 1)
-    slg_y   = logo_y - 32 - total_h   # 32px gap between slogan block and logo
+    slg_y   = logo_y - 55 - total_h   # 55px gap between slogan block and logo
 
     for line in lines:
         _centered(line, font_slg, slg_y, color=WHITE, shadow_alpha=160)

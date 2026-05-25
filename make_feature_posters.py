@@ -220,7 +220,7 @@ def compose(photo_bytes: bytes, feat: dict) -> Image.Image:
     GRAD_H = int(H * 0.25)          # 25% of image height → starts at 75%
     g_arr  = np.zeros((GRAD_H, W, 4), dtype=np.uint8)
     for row in range(GRAD_H):
-        t = 1.0 - (row / max(GRAD_H - 1, 1))  # 1.0 at bottom, 0.0 at top
+        t = row / max(GRAD_H - 1, 1)  # 0.0 at top of zone, 1.0 at very bottom edge
         g_arr[row, :, 3] = int(235 * (t ** 0.5))
     g_img = Image.fromarray(g_arr, "RGBA")
     canvas.paste(g_img, (0, H - GRAD_H), g_img)
@@ -254,9 +254,9 @@ def compose(photo_bytes: bytes, feat: dict) -> Image.Image:
         draw.text((lx,     logo_y),     txt, font=fnt, fill=col)
         lx += draw.textbbox((0, 0), txt, font=fnt)[2]
 
-    # ── 3. Slogan — large bold white, DIRECTLY ABOVE LOGO ────────────────
+    # ── 3. Slogan — large bold white CAPS, ABOVE LOGO ───────────────────
     #    Always 2 lines (3+3 words). Font auto-sizes until both fit MAX_TW.
-    words = feat["slogan"].split()
+    words = feat["slogan"].upper().split()
     mid   = max(1, len(words) // 2)
     lines = [" ".join(words[:mid]), " ".join(words[mid:])]
 
@@ -271,7 +271,7 @@ def compose(photo_bytes: bytes, feat: dict) -> Image.Image:
     gap     = 12
     total_h = lh * len(lines) + gap * (len(lines) - 1)
 
-    slg_y = logo_y - 26 - total_h   # 26px gap between slogan and logo
+    slg_y = logo_y - 45 - total_h   # 45px gap between slogan and logo
     for line in lines:
         _centered(line, font_slg, slg_y, color=WHITE, shadow_alpha=150)
         slg_y += lh + gap
