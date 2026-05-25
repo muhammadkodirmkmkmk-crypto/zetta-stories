@@ -136,6 +136,8 @@ def generate_photo(hint: str) -> bytes:
         "beautifully blurred soft-focus background with shallow depth of field. "
         "Person wears a dark navy apron over a clean white shirt. "
         "Person is sharp, well-lit, and looks calm and confident. "
+        "Uzbek male appearance, Central Asian features, dark hair, "
+        "clean-shaven or light stubble, aged 30-40. "
         "Color palette: white, ivory, cream, ash wood tones, deep navy — "
         "absolutely NO red, NO pink, NO dark color grading. "
         "Mood: clean, bright, professional, trustworthy. "
