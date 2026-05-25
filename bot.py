@@ -99,6 +99,96 @@ IIKO_FEATURES = [
 ]
 
 # ---------------------------------------------------------------------------
+# Role-based visual style
+# ---------------------------------------------------------------------------
+
+ROLE_OWNER   = "owner"
+ROLE_MANAGER = "manager"
+ROLE_CHEF    = "chef"
+
+_OWNER_KEYWORDS = [
+    "hisobot", "moliyaviy", "tahlil", "daromad", "antifrod",
+    "kassa nazorat", "smena hisobot", "z-hisobot", "kpi",
+    "moliyaviy hisobotlar", "kengaytirilgan", "buyurtmalar tahlili",
+    "sotish tahlili", "abc tahlil", "reklama", "franshiza",
+    "tarmoq", "moliyaviy nazorat", "smena hisobotlari",
+]
+_CHEF_KEYWORDS = [
+    "menyu", "meny", "ombor", "zaxira", "inventar", "ingredient",
+    "retsept", "stop-list", "modifikator", "kombo", "fudkost",
+    "yetkazib", "agregator", "inventarizatsiya",
+]
+
+def _detect_role(feature_name: str) -> str:
+    """Detect the visual role from the iiko feature name."""
+    n = feature_name.lower()
+    if any(kw in n for kw in _OWNER_KEYWORDS):
+        return ROLE_OWNER
+    if any(kw in n for kw in _CHEF_KEYWORDS):
+        return ROLE_CHEF
+    return ROLE_MANAGER
+
+ROLE_STYLES: dict[str, dict] = {
+    ROLE_OWNER: {
+        "person_desc": (
+            "confident Uzbek male restaurant OWNER aged 38-45, dark straight hair, clean-shaven, "
+            "wearing a tailored dark charcoal suit jacket over a bright red apron with ZETTA logo on the side, "
+            "sitting at a sleek desk or standing in a commanding executive posture, "
+            "calm authoritative expression facing camera directly"
+        ),
+        "background_desc": (
+            "elegant upscale fine dining restaurant, very dark moody interior, "
+            "deep charcoal and navy walls, tables lit by single candles creating warm spotlights, "
+            "crystal glassware, white linen tablecloths, gold accent decor, "
+            "luxurious sophisticated atmosphere, professional dramatic lighting"
+        ),
+        "mood": "professional, successful, premium, authoritative, executive",
+        "claude_hint": (
+            "Rol: RESTORAN EGASI (owner). "
+            "Uslub: elegant, premium, to'q fon, ishbilarmon. "
+            "Shaxs: kostyum va qizil apron kiygan muvaffaqiyatli egasi, stol yonida yoki premium fonda."
+        ),
+    },
+    ROLE_MANAGER: {
+        "person_desc": (
+            "Uzbek male restaurant MANAGER aged 30-40, dark straight hair, clean-shaven, "
+            "bright red apron with ZETTA logo on the side over white shirt, "
+            "standing upright holding a tablet or clipboard, observing the dining area, "
+            "confident organized posture facing camera directly"
+        ),
+        "background_desc": (
+            "bright modern restaurant dining hall, floor-to-ceiling windows with natural daylight, "
+            "white and light wood interior, organized dining tables visible in background, "
+            "clean airy open atmosphere"
+        ),
+        "mood": "organized, in control, energetic, confident, professional",
+        "claude_hint": (
+            "Rol: MENEJER (manager). "
+            "Uslub: yorqin, zamonaviy, tartibli. "
+            "Shaxs: qizil apron, restoran zalida tablet yoki clipboard bilan turgan menejer."
+        ),
+    },
+    ROLE_CHEF: {
+        "person_desc": (
+            "Uzbek male restaurant CHEF or kitchen manager aged 28-38, dark straight hair, clean-shaven, "
+            "white chef coat with bright red apron with ZETTA logo on the side, "
+            "standing in professional kitchen environment, focused skilled expression facing camera"
+        ),
+        "background_desc": (
+            "professional restaurant kitchen, shiny stainless steel countertops and shelving, "
+            "large industrial range hood, professional kitchen equipment, "
+            "warm overhead kitchen lighting, active culinary environment, steel and warm tones"
+        ),
+        "mood": "creative, skilled, focused, passionate, expert",
+        "claude_hint": (
+            "Rol: OSHPAZ / OSHXONA MENEJERI (chef). "
+            "Uslub: professional oshxona, po'lat yuzalar, kreativ. "
+            "Shaxs: oq forma va qizil apron kiygan oshpaz, oshxona fonida."
+        ),
+    },
+}
+
+# ---------------------------------------------------------------------------
 # Title format rotation (never repeat same format twice in a row)
 # ---------------------------------------------------------------------------
 
@@ -338,15 +428,21 @@ def compose_story_image(
 # Claude content generation
 # ---------------------------------------------------------------------------
 
-def generate_story_content(feature_name: str, feature_desc: str) -> dict:
-    logger.info("Generating content for feature: %s", feature_name)
+def generate_story_content(feature_name: str, feature_desc: str,
+                           role: str = ROLE_MANAGER) -> dict:
+    logger.info("Generating content for feature: %s (role=%s)", feature_name, role)
     fmt_name, fmt_instruction = _next_title_format()
     logger.info("Using title format: %s", fmt_name)
+    style = ROLE_STYLES[role]
     prompt = f"""Sen Zetta Group uchun Instagram Stories kontent yaratuvchisan.
 Zetta Group — O'zbekistondagi iiko rasmiy hamkori. Restoran biznesini avtomatlashtirish yechimlari.
 
 Quyidagi iiko xususiyati uchun kontent yarat:
 - Xususiyat: {feature_name} ({feature_desc})
+
+ROL VA USLUB:
+{style["claude_hint"]}
+Kayfiyat: {style["mood"]}
 
 SLOGAN QOIDALARI (qat'iy):
 - Aynan 6 ta so'z — na ko'p, na kam
@@ -358,16 +454,14 @@ Misol (6 so'z): "Jamoangizni iiko bilan samarali boshqaring"
 Misol (6 so'z): "Ombor nazorati orqali foyda ko'paytiring"
 
 IMAGE PROMPT QOIDALARI:
-- O'zbekistonlik erkak, 30-40 yosh, qora soch, soqolsiz yoki engil soqol
-- Yorqin, minimal, zamonaviy restoran ichki ko'rinishi
-- Katta eshkvor oynalar, tabiiy kun yorug'ligi
-- Qizil apron, yon tomonida ZETTA logosi bor, oq ko'ylak
-- Fon xiralashtirilgan: yog'och stullar, marmar stollar, yashil o'simliklar
+- Shaxs: {style["person_desc"]}
+- Fon: {style["background_desc"]}
+- {feature_name} xususiyatiga mos aniq harakat/sahna ko'rsat
 
 Faqat JSON qaytargin, hech qanday izoh yo'q:
 {{
   "slogan": "aynan 6 so'zlik o'zbek slogani",
-  "image_prompt": "Uzbek male 30-40, dark hair, clean-shaven or light stubble, bright red apron with ZETTA logo text on the side over white shirt, [specific action related to {feature_name}] in a bright minimal modern restaurant interior, large floor-to-ceiling windows with natural daylight, blurred background with wooden chairs and marble tables and green plants, photorealistic editorial quality, 4K, no text, no logos, bright airy clean atmosphere"
+  "image_prompt": "{style['person_desc']}, [specific action related to {feature_name}], {style['background_desc']}, photorealistic editorial quality, 4K sharp, no text, no logos, no watermarks"
 }}"""
 
     response = claude_client.messages.create(
@@ -418,23 +512,21 @@ Faqat JSON qaytargin:
 # fal.ai image generation — flux-pro for photorealistic results
 # ---------------------------------------------------------------------------
 
-async def generate_fal_image(image_prompt: str) -> bytes:
-    logger.info("Generating image via fal.ai flux-pro...")
+async def generate_fal_image(image_prompt: str,
+                             role: str = ROLE_MANAGER) -> bytes:
+    logger.info("Generating image via fal.ai flux-pro (role=%s)...", role)
+    style = ROLE_STYLES[role]
     enhanced = (
         f"{image_prompt}. "
-        "Uzbek male 30-40, Central Asian features, dark straight hair, clean-shaven, "
+        f"PERSON: {style['person_desc']}. "
+        "Central Asian features, dark straight hair, clean-shaven, "
         "calm confident smile facing camera directly. "
-        "Bright red apron with ZETTA logo text on the side, over white shirt. "
         "NO headset, NO headphones, NO earpiece, NO earbuds, NO glasses. "
-        "Bright clean minimal restaurant interior, extremely airy, "
-        "large floor-to-ceiling windows flooding scene with soft natural daylight. "
-        "White walls, light blond wooden chairs, white marble tables, lush green indoor plants, "
-        "blurred soft-focus background, shallow depth of field. "
-        "Color palette: white, ivory, cream, ash wood tones, bright red. "
-        "Absolutely NO dark color grading, NO overlays, NO gradients. "
-        "NOT dramatic, NOT moody, NOT dark, NOT high-contrast. "
-        "Photorealistic editorial magazine quality, 4K sharp, natural colors. "
-        "No text, no logos, no watermarks."
+        f"BACKGROUND: {style['background_desc']}. "
+        "Shallow depth of field, person sharp and well-lit, background naturally blurred. "
+        f"Mood: {style['mood']}. "
+        "NO overlays, NO gradients added, NO text, NO logos, NO watermarks. "
+        "Photorealistic editorial magazine quality, 4K sharp, natural colors."
     )
 
     def _run():
@@ -541,14 +633,19 @@ async def publish_to_instagram(image_bytes: bytes, slot_num: int) -> tuple[bool,
 # ---------------------------------------------------------------------------
 
 async def build_story(feature_name: str, feature_desc: str) -> dict:
+    role    = _detect_role(feature_name)
+    logger.info("Role detected for '%s': %s", feature_name, role)
     loop    = asyncio.get_event_loop()
-    content = await loop.run_in_executor(None, generate_story_content, feature_name, feature_desc)
+    content = await loop.run_in_executor(
+        None, generate_story_content, feature_name, feature_desc, role
+    )
 
-    photo_bytes = await generate_fal_image(content["image_prompt"])
+    photo_bytes = await generate_fal_image(content["image_prompt"], role)
     composed    = compose_story_image(photo_bytes, content["slogan"])
 
     return {
         "feature_name": feature_name,
+        "role":         role,
         "slogan":       content["slogan"],
         "image_prompt": content["image_prompt"],
         "image_bytes":  composed,
@@ -556,14 +653,16 @@ async def build_story(feature_name: str, feature_desc: str) -> dict:
 
 
 async def build_edited_story(story: dict, edit_request: str) -> dict:
+    role    = story.get("role") or _detect_role(story.get("feature_name", ""))
     loop    = asyncio.get_event_loop()
     content = await loop.run_in_executor(None, generate_edited_content, story, edit_request)
 
-    photo_bytes = await generate_fal_image(content["image_prompt"])
+    photo_bytes = await generate_fal_image(content["image_prompt"], role)
     composed    = compose_story_image(photo_bytes, content["slogan"])
 
     return {
         "feature_name": content.get("feature_name", story["feature_name"]),
+        "role":         role,
         "slogan":       content["slogan"],
         "image_prompt": content["image_prompt"],
         "image_bytes":  composed,
@@ -734,7 +833,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_caption(caption=f"⚠️ Story #{slot_num} topilmadi.")
             return
 
-        await query.edit_message_caption(caption=f"✅ Story #{slot_num} tasdiqlandi! Fayl yuborilmoqda...")
+        await query.edit_message_caption(caption=f"✅ Story #{slot_num} tasdiqlandi! Yuborilmoqda...")
 
         # Save locally
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -742,7 +841,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         filename.write_bytes(story["image_bytes"])
         logger.info("Story #%d saved → %s", slot_num, filename)
 
-        # Send full-quality image file to primary user
+        # Resend approved photo back to the requester (first user) as an inline photo
+        photo_buf = io.BytesIO(story["image_bytes"])
+        photo_buf.name = f"story_{slot_num}_{timestamp}.jpg"
+        photo_buf.seek(0)
+        await context.bot.send_photo(
+            chat_id=TELEGRAM_USER_ID,
+            photo=photo_buf,
+        )
+        logger.info("Story #%d approved photo resent to primary user as photo", slot_num)
+
+        # Also send as full-quality document for Instagram upload
         doc_buf = io.BytesIO(story["image_bytes"])
         doc_buf.name = f"story_{slot_num}_{timestamp}.jpg"
         doc_buf.seek(0)
