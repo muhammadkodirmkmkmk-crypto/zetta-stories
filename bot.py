@@ -261,27 +261,40 @@ def compose_story_image(
     canvas = photo.convert("RGBA")
     draw   = ImageDraw.Draw(canvas)
 
-    MAX_W = IMAGE_W - 80    # 40px margin each side → 1000px usable
-    WHITE = (255, 255, 255, 255)
+    MAX_W    = IMAGE_W - 80    # 40px margin each side → 1000px usable
+    WHITE    = (255, 255, 255, 255)
+    LOGO_COL = (255, 255, 255, 210)
+    SHD      = (0, 0, 0, 130)
 
-    def _centered(text, font, y, color=WHITE, shadow_alpha=160):
+    def _centered(text, font, y, color=WHITE, shadow_alpha=140):
         bbox = draw.textbbox((0, 0), text, font=font)
         x    = (IMAGE_W - (bbox[2] - bbox[0])) // 2
         draw.text((x + 4, y + 4), text, font=font, fill=(0, 0, 0, shadow_alpha))
         draw.text((x, y), text, font=font, fill=color)
 
-    # ── 2. Logo: "Z E T T A  ×  iiko" — 3 parts drawn side-by-side ──────────
-    logo_y  = 70
-    f_zetta = _find_font(bold=False, size=56)
-    f_sep   = _find_font(bold=False, size=48)
-    f_iiko  = _find_font(bold=True,  size=56)
+    # ── 2. Bottom gradient: solid dark at very bottom → transparent going up ──
+    GRAD_H = int(IMAGE_H * 0.35)     # 35% of 1920 = 672px
+    g_arr  = np.zeros((GRAD_H, IMAGE_W, 4), dtype=np.uint8)
+    for row in range(GRAD_H):
+        t = 1.0 - (row / max(GRAD_H - 1, 1))   # 1.0 at bottom, 0.0 at top
+        g_arr[row, :, 3] = int(230 * (t ** 0.55))
+    g_img = Image.fromarray(g_arr, "RGBA")
+    canvas.paste(g_img, (0, IMAGE_H - GRAD_H), g_img)
+    draw = ImageDraw.Draw(canvas)
+
+    # ── 3. Logo "Z E T T A  ×  iiko" — small thin text, BOTTOM CENTER ────────
+    f_zetta = _find_font(bold=False, size=42)
+    f_sep   = _find_font(bold=False, size=36)
+    f_iiko  = _find_font(bold=True,  size=42)
     t_zetta, t_sep, t_iiko = "Z E T T A", "  ×  ", "iiko"
+
+    logo_h = draw.textbbox((0, 0), t_zetta, font=f_zetta)[3]
+    logo_y = IMAGE_H - logo_h - 55   # 55px from very bottom edge
+
     w_z = draw.textbbox((0, 0), t_zetta, font=f_zetta)[2]
     w_s = draw.textbbox((0, 0), t_sep,   font=f_sep)[2]
     w_i = draw.textbbox((0, 0), t_iiko,  font=f_iiko)[2]
     lx  = (IMAGE_W - w_z - w_s - w_i) // 2
-    LOGO_COL = (255, 255, 255, 220)
-    SHD      = (0, 0, 0, 130)
     for txt, fnt, col in [(t_zetta, f_zetta, LOGO_COL),
                           (t_sep,   f_sep,   LOGO_COL),
                           (t_iiko,  f_iiko,  WHITE)]:
@@ -289,9 +302,8 @@ def compose_story_image(
         draw.text((lx,     logo_y),     txt, font=fnt, fill=col)
         lx += draw.textbbox((0, 0), txt, font=fnt)[2]
 
-    # ── 3. Slogan — bold white, CENTER-MIDDLE of image ───────────────────────
-    #    Always split into 2 lines (3 words each for 6-word slogans).
-    #    Font auto-sizes down until both lines fit within MAX_W.
+    # ── 4. Slogan — bold white, DIRECTLY ABOVE LOGO ───────────────────────────
+    #    Always 2 lines. Font auto-sizes until both lines fit MAX_W.
     words = slogan.split()
     mid   = max(1, len(words) // 2)
     lines = [" ".join(words[:mid]), " ".join(words[mid:])]
@@ -303,25 +315,11 @@ def compose_story_image(
             font_slg = f
             break
 
-    lh        = draw.textbbox((0, 0), lines[0], font=font_slg)[3]
-    gap       = 16
-    total_h   = lh * len(lines) + gap * (len(lines) - 1)
-    slg_y_top = IMAGE_H // 2 - total_h // 2
+    lh      = draw.textbbox((0, 0), lines[0], font=font_slg)[3]
+    gap     = 16
+    total_h = lh * len(lines) + gap * (len(lines) - 1)
+    slg_y   = logo_y - 32 - total_h   # 32px gap between slogan block and logo
 
-    # Soft dark gradient behind text zone only (gentle, not harsh bar)
-    pad_v  = 55
-    g_top  = max(0, slg_y_top - pad_v)
-    g_bot  = min(IMAGE_H, slg_y_top + total_h + pad_v)
-    g_h    = g_bot - g_top
-    g_arr  = np.zeros((g_h, IMAGE_W, 4), dtype=np.uint8)
-    for row in range(g_h):
-        t            = row / max(g_h - 1, 1)
-        g_arr[row, :, 3] = int(115 * (1 - (abs(t - 0.5) * 2) ** 1.4))
-    canvas.paste(Image.fromarray(g_arr, "RGBA"), (0, g_top),
-                 Image.fromarray(g_arr, "RGBA"))
-    draw = ImageDraw.Draw(canvas)
-
-    slg_y = slg_y_top
     for line in lines:
         _centered(line, font_slg, slg_y, color=WHITE, shadow_alpha=160)
         slg_y += lh + gap
