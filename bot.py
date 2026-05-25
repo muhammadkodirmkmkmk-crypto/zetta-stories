@@ -209,17 +209,11 @@ def _final_approval_keyboard(slot_idx: int) -> InlineKeyboardMarkup:
 
 
 def _story_caption(slot_num: int, story: dict, suffix: str = "") -> str:
-    t_top  = story.get("title_top", "")
-    t_main = story.get("title_main", story.get("title", ""))
-    t_bot  = story.get("title_bottom", "")
-    parts  = " / ".join(p for p in [t_top, t_main, t_bot] if p)
+    slogan = story.get("slogan", story.get("title_main", ""))
     return (
         f"📸 *Story #{slot_num}*{suffix}\n\n"
         f"🏷 *Xususiyat:* {story['feature_name']}\n"
-        f"📝 *Sarlavha:*\n"
-        f"   _{t_top}_\n"
-        f"   *{t_main}*\n"
-        f"   _{t_bot}_\n"
+        f"💬 *Slogan:* {slogan}\n"
     )
 
 
@@ -255,99 +249,60 @@ def _wrap_title(title: str, max_chars: int = 18) -> list[str]:
 
 def compose_story_image(
     photo_bytes: bytes,
-    title_top: str,
-    title_main: str,
-    title_bottom: str = "",   # kept for compat, ignored
+    slogan: str,
+    title_top: str = "",      # legacy compat — ignored
+    title_main: str = "",     # legacy compat — ignored
+    title_bottom: str = "",   # legacy compat — ignored
 ) -> bytes:
-    import re
-    # ── 1. Photo fills entire 1080×1920 canvas (cover crop, no stretch) ──────
     from PIL import ImageOps
-    photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
-    photo = ImageOps.fit(photo, (IMAGE_W, IMAGE_H), method=Image.LANCZOS, centering=(0.5, 0.3))
+    # ── 1. Photo fills entire 1080×1920 canvas (cover crop) ──────────────────
+    photo  = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
+    photo  = ImageOps.fit(photo, (IMAGE_W, IMAGE_H), method=Image.LANCZOS, centering=(0.5, 0.3))
+    canvas = photo.convert("RGBA")
+    draw   = ImageDraw.Draw(canvas)
 
-    # ── 2. Subtle red vignette — only a gentle tint behind the text area ────
-    #    No solid zone. Fades from alpha=120 at top to 0 by y=460.
-    #    Photo stays visible and clean throughout.
-    FADE_H   = 460
-    y_idx    = np.arange(IMAGE_H, dtype=np.float32)
-    fade     = np.clip(y_idx / FADE_H, 0.0, 1.0)
-    alpha_1d = np.clip(120.0 * (1.0 - fade), 0, 120).astype(np.uint8)
+    MAX_W = IMAGE_W - 120   # 960px usable width
+    WHITE = (255, 255, 255, 255)
 
-    overlay_arr = np.zeros((IMAGE_H, IMAGE_W, 4), dtype=np.uint8)
-    overlay_arr[:, :, 0] = 0xA7   # #A70D19
-    overlay_arr[:, :, 1] = 0x0D
-    overlay_arr[:, :, 2] = 0x19
-    overlay_arr[:, :, 3] = alpha_1d[:, np.newaxis]
+    def _centered(text, font, y, color=WHITE, shadow_alpha=150):
+        bbox = draw.textbbox((0, 0), text, font=font)
+        x    = (IMAGE_W - (bbox[2] - bbox[0])) // 2
+        draw.text((x + 3, y + 3), text, font=font, fill=(0, 0, 0, shadow_alpha))
+        draw.text((x, y), text, font=font, fill=color)
 
-    overlay = Image.fromarray(overlay_arr, mode="RGBA")
-    canvas  = Image.alpha_composite(photo.convert("RGBA"), overlay)
-    draw    = ImageDraw.Draw(canvas)
-
-    MAX_W  = IMAGE_W - 120   # 960px (60px padding each side)
-    WHITE  = (255, 255, 255, 255)
-    WHITE_DIM = (255, 255, 255, 210)  # slightly dimmer for small line
-
-    def _centered(d, text, font, y, color=WHITE, shadow_alpha=160):
-        bbox = d.textbbox((0, 0), text, font=font)
-        x = (IMAGE_W - (bbox[2] - bbox[0])) // 2
-        d.text((x + 3, y + 3), text, font=font, fill=(0, 0, 0, shadow_alpha))
-        d.text((x, y), text, font=font, fill=color)
-
-    def _clean(text: str) -> str:
-        return re.sub(r"[^\w\s'`'\u2018\u2019\u02bc]", "", text).strip()
-
-    def _fit_1line(text: str, sizes: tuple, bold: bool):
+    def _fit(text, sizes, bold=True):
         for sz in sizes:
             f = _find_font(bold=bold, size=sz)
             if draw.textbbox((0, 0), text, font=f)[2] <= MAX_W:
                 return f, sz
         return _find_font(bold=bold, size=sizes[-1]), sizes[-1]
 
-    # ── 3. Logo ───────────────────────────────────────────────────────────────
-    _centered(draw, "Z E T T A", _find_font(bold=False, size=60), y=186)
+    # ── 2. "ZETTA × iiko" — thin white, top center ───────────────────────────
+    label_y    = 80
+    font_label = _find_font(bold=False, size=44)
+    _centered("ZETTA × iiko", font_label, label_y,
+              color=(255, 255, 255, 210), shadow_alpha=120)
 
-    # ── 4. Two-line title  (LINE 1: small hook · LINE 2: big slogan) ─────────
-    #
-    #   Line 1 (title_top)  — 28-32px, normal weight, white dimmed, optional
-    #   Line 2 (title_main) — 80-100px, bold, pure white, max 2-3 words
-    #   ALL WHITE. No colours.
-    #
-    y_cursor = 256
+    # ── 3. 6-word slogan — bold white, lower third ───────────────────────────
+    font_slg, _ = _fit(slogan, (72, 60, 52, 44), bold=True)
+    slg_bbox    = draw.textbbox((0, 0), slogan, font=font_slg)
+    slg_h       = slg_bbox[3] - slg_bbox[1]
+    slg_y       = IMAGE_H - 200 - slg_h
 
-    # --- Line 1: title_top (small) ---
-    top_clean = _clean(title_top)
-    if top_clean:
-        font_top, sz_top = _fit_1line(top_clean, (32, 28, 24), bold=False)
-        _centered(draw, top_clean, font_top, y=y_cursor,
-                  color=WHITE_DIM, shadow_alpha=100)
-        y_cursor += draw.textbbox((0, 0), top_clean, font=font_top)[3] + 14
-    else:
-        y_cursor += 10
+    # Narrow dark wash behind slogan only
+    wash_pad = 24
+    wash_h   = slg_h + wash_pad * 2
+    wash_arr = np.zeros((wash_h, IMAGE_W, 4), dtype=np.uint8)
+    for row in range(wash_h):
+        t     = row / wash_h
+        a     = int(160 * (1 - abs(t - 0.5) * 2) ** 0.35)
+        wash_arr[row, :, 3] = a
+    wash_img = Image.fromarray(wash_arr, "RGBA")
+    canvas.paste(wash_img, (0, slg_y - wash_pad), wash_img)
+    draw = ImageDraw.Draw(canvas)   # refresh after paste
+    _centered(slogan, font_slg, slg_y, color=WHITE)
 
-    # --- Line 2: title_main (BIG slogan) ---
-    main_clean = _clean(title_main).upper()
-    font_main, main_sz = _fit_1line(main_clean, (100, 90, 80, 70), bold=True)
-
-    # If still doesn't fit as one line, split into 2 at most
-    main_lines = [main_clean]
-    if draw.textbbox((0, 0), main_clean, font=font_main)[2] > MAX_W:
-        words_m = main_clean.split()
-        if len(words_m) >= 2:
-            mid = max(1, len(words_m) // 2)
-            l1, l2 = " ".join(words_m[:mid]), " ".join(words_m[mid:])
-            for sz in (90, 80, 70, 60):
-                f = _find_font(bold=True, size=sz)
-                if draw.textbbox((0,0), l1, font=f)[2] <= MAX_W and \
-                   draw.textbbox((0,0), l2, font=f)[2] <= MAX_W:
-                    font_main, main_sz = f, sz
-                    main_lines = [l1, l2]
-                    break
-
-    for line in main_lines:
-        _centered(draw, line, font_main, y=y_cursor, color=WHITE, shadow_alpha=180)
-        y_cursor += main_sz + 10
-
-    # ── 5. Output ─────────────────────────────────────────────────────────────
+    # ── 4. Output ─────────────────────────────────────────────────────────────
     result = canvas.convert("RGB")
     assert result.size == (IMAGE_W, IMAGE_H), f"Bad size: {result.size}"
     buf = io.BytesIO()
@@ -370,28 +325,26 @@ Zetta Group — O'zbekistondagi iiko rasmiy hamkori. Restoran biznesini avtomatl
 Quyidagi iiko xususiyati uchun kontent yarat:
 - Xususiyat: {feature_name} ({feature_desc})
 
-SARLAVHA FORMATI — bugun: {fmt_name}
-{fmt_instruction}
+SLOGAN QOIDALARI (qat'iy):
+- Aynan 6 ta so'z — na ko'p, na kam
+- O'zbek tilida, tabiiy va kuchli
+- Hech qanday belgi yo'q: tire, nuqta, vergul, undov, savol — faqat so'zlar va apostrof (')
+- Xususiyat bilan to'g'ridan-to'g'ri bog'liq bo'lsin
 
-SARLAVHA TUZILMASI — faqat 2 satr, hammasi OQ rang:
-- title_top  : IXTIYORIY qisqa ilgak, 2-4 so'z, kichik harflar
-               Misol: "sen hali" / "bilasanmi" / "har kuni" / "3 sabab"
-               Agar kerak bo'lmasa — bo'sh qoldirish mumkin: ""
-- title_main : ASOSIY SLOGAN, maksimal 2-3 so'z, KATTA HARFLAR, qisqa va kuchli
-               Misol: "ABC TAHLIL" / "STOP LIST" / "FUDKOST NAZORAT" / "KPI TIZIM"
-               Bu eng katta bo'ladi (80-100px). HECH QACHON 4 so'zdan oshmasin!
+Misol (6 so'z): "Jamoangizni iiko bilan samarali boshqaring"
+Misol (6 so'z): "Ombor nazorati orqali foyda ko'paytiring"
 
-Qat'iy qoidalar:
-- Hech qanday belgi yo'q: tire, nuqta, vergul, undov, savol. Faqat so'zlar va apostrof (')
-- title_main MAKSIMAL 3 so'z — bu slogan, tavsif emas
-- title_bottom YO'Q — faqat 2 satr
+IMAGE PROMPT QOIDALARI:
+- O'zbekistonlik erkak, 30-40 yosh, qora soch, soqolsiz yoki engil soqol
+- Yorqin, minimal, zamonaviy restoran ichki ko'rinishi
+- Katta eshkvor oynalar, tabiiy kun yorug'ligi
+- Qoʻngʻir-jigarrang apron, oq ko'ylak
+- Fon xiralashtirilgan: yog'och stullar, marmar stollar, yashil o'simliklar
 
 Faqat JSON qaytargin, hech qanday izoh yo'q:
 {{
-  "title_top": "...",
-  "title_main": "...",
-  "title_bottom": "",
-  "image_prompt": "Detailed English prompt for photorealistic restaurant or business scene related to {feature_name}. Professional photography, warm lighting, elegant interior, staff using technology, no text in image, 4k quality."
+  "slogan": "aynan 6 so'zlik o'zbek slogani",
+  "image_prompt": "Uzbek male 30-40, dark hair, clean-shaven or light stubble, dark navy apron over white shirt, [specific action related to {feature_name}] in a bright minimal modern restaurant interior, large floor-to-ceiling windows with natural daylight, blurred background with wooden chairs and marble tables and green plants, photorealistic editorial quality, 4K, no text, no logos, NO red or dark color grading, bright airy clean atmosphere"
 }}"""
 
     response = claude_client.messages.create(
@@ -401,8 +354,7 @@ Faqat JSON qaytargin, hech qanday izoh yo'q:
     )
     raw  = response.content[0].text.strip().replace("```json", "").replace("```", "").strip()
     data = json.loads(raw)
-    logger.info("Content generated: top=%r | main=%r",
-                data.get("title_top"), data.get("title_main"))
+    logger.info("Content generated: slogan=%r", data.get("slogan"))
     return data
 
 
@@ -412,24 +364,20 @@ def generate_edited_content(story: dict, edit_request: str) -> dict:
 
 Mavjud kontent:
 - feature_name: {story['feature_name']}
-- title_top: {story.get('title_top', '')}
-- title_main: {story.get('title_main', story.get('title', ''))}
-- title_bottom: {story.get('title_bottom', '')}
+- slogan: {story.get('slogan', '')}
 - image_prompt: {story['image_prompt']}
 
 Foydalanuvchi so'rovi: {edit_request}
 
-Faqat o'zgartirilishi kerak bo'lgan maydonlarni yangilang. 2 satrli tuzilmani saqlang.
-Hech qanday belgi yo'q: tire, nuqta, vergul, undov, savol. Faqat so'zlar va apostrof.
-
-title_main MAKSIMAL 3 so'z — qisqa slogan, tavsif emas. title_bottom bo'sh qoldirilsin.
+SLOGAN QOIDALARI (qat'iy):
+- Aynan 6 ta so'z — na ko'p, na kam
+- O'zbek tilida, tabiiy va kuchli
+- Hech qanday belgi yo'q: tire, nuqta, vergul, undov, savol — faqat so'zlar va apostrof (')
 
 Faqat JSON qaytargin:
 {{
-  "title_top": "qisqa ilgak 2-4 so'z yoki bo'sh",
-  "title_main": "ASOSIY SLOGAN MAX 3 SOZ",
-  "title_bottom": "",
-  "image_prompt": "Detailed English prompt..."
+  "slogan": "aynan 6 so'zlik o'zbek slogani",
+  "image_prompt": "Uzbek male 30-40, dark hair, clean-shaven or light stubble, dark navy apron over white shirt, [specific action] in a bright minimal modern restaurant interior, large floor-to-ceiling windows with natural daylight, blurred background with wooden chairs and marble tables and green plants, photorealistic editorial quality, 4K, no text, no logos, NO red or dark color grading, bright airy clean atmosphere"
 }}"""
 
     response = claude_client.messages.create(
@@ -439,8 +387,7 @@ Faqat JSON qaytargin:
     )
     raw  = response.content[0].text.strip().replace("```json", "").replace("```", "").strip()
     data = json.loads(raw)
-    logger.info("Edited content: top=%s | main=%s | bottom=%s",
-                data.get("title_top"), data.get("title_main"), data.get("title_bottom"))
+    logger.info("Edited content: slogan=%r", data.get("slogan"))
     return data
 
 
@@ -452,12 +399,15 @@ async def generate_fal_image(image_prompt: str) -> bytes:
     logger.info("Generating image via fal.ai flux-pro...")
     enhanced = (
         f"{image_prompt}. "
-        "Style: bright upscale restaurant interior, natural daylight from large windows, "
-        "warm neutral tones (cream, beige, soft wood), elegantly dressed staff smiling, "
-        "happy guests at white-tablecloth tables with flowers and wine glasses, "
-        "shallow depth of field, professional editorial photography, "
-        "high-end magazine quality, 4K, photorealistic, "
-        "no text, no logos, no watermarks, no UI elements"
+        "Bright clean minimal restaurant interior, extremely airy, "
+        "large floor-to-ceiling windows flooding scene with soft natural daylight. "
+        "White walls, light blond wooden chairs, white marble tables, lush green indoor plants, "
+        "blurred soft-focus background, shallow depth of field. "
+        "Color palette: white, ivory, cream, ash wood tones, deep navy. "
+        "Absolutely NO red, NO pink, NO dark color grading, NO overlays, NO gradients. "
+        "NOT dramatic, NOT moody, NOT dark, NOT high-contrast. "
+        "Photorealistic editorial magazine quality, 4K sharp, natural colors. "
+        "No text, no logos, no watermarks."
     )
 
     def _run():
@@ -568,18 +518,11 @@ async def build_story(feature_name: str, feature_desc: str) -> dict:
     content = await loop.run_in_executor(None, generate_story_content, feature_name, feature_desc)
 
     photo_bytes = await generate_fal_image(content["image_prompt"])
-    composed    = compose_story_image(
-        photo_bytes,
-        content["title_top"],
-        content["title_main"],
-        content["title_bottom"],
-    )
+    composed    = compose_story_image(photo_bytes, content["slogan"])
 
     return {
         "feature_name": feature_name,
-        "title_top":    content["title_top"],
-        "title_main":   content["title_main"],
-        "title_bottom": content["title_bottom"],
+        "slogan":       content["slogan"],
         "image_prompt": content["image_prompt"],
         "image_bytes":  composed,
     }
@@ -590,18 +533,11 @@ async def build_edited_story(story: dict, edit_request: str) -> dict:
     content = await loop.run_in_executor(None, generate_edited_content, story, edit_request)
 
     photo_bytes = await generate_fal_image(content["image_prompt"])
-    composed    = compose_story_image(
-        photo_bytes,
-        content["title_top"],
-        content["title_main"],
-        content["title_bottom"],
-    )
+    composed    = compose_story_image(photo_bytes, content["slogan"])
 
     return {
         "feature_name": content.get("feature_name", story["feature_name"]),
-        "title_top":    content["title_top"],
-        "title_main":   content["title_main"],
-        "title_bottom": content["title_bottom"],
+        "slogan":       content["slogan"],
         "image_prompt": content["image_prompt"],
         "image_bytes":  composed,
     }
