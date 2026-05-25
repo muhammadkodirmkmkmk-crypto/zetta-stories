@@ -261,24 +261,16 @@ def compose_story_image(
     canvas = photo.convert("RGBA")
     draw   = ImageDraw.Draw(canvas)
 
-    MAX_W = IMAGE_W - 140   # 940px usable width
+    MAX_W = IMAGE_W - 80    # 40px margin each side → 1000px usable
     WHITE = (255, 255, 255, 255)
 
-    def _centered(text, font, y, color=WHITE, shadow_alpha=180):
+    def _centered(text, font, y, color=WHITE, shadow_alpha=160):
         bbox = draw.textbbox((0, 0), text, font=font)
         x    = (IMAGE_W - (bbox[2] - bbox[0])) // 2
         draw.text((x + 4, y + 4), text, font=font, fill=(0, 0, 0, shadow_alpha))
         draw.text((x, y), text, font=font, fill=color)
 
-    def _fit(text, sizes, bold=True):
-        for sz in sizes:
-            f = _find_font(bold=bold, size=sz)
-            if draw.textbbox((0, 0), text, font=f)[2] <= MAX_W:
-                return f, sz
-        return _find_font(bold=bold, size=sizes[-1]), sizes[-1]
-
     # ── 2. Logo: "Z E T T A  ×  iiko" — 3 parts drawn side-by-side ──────────
-    #    ZETTA: thin spaced   ×: medium   iiko: bold
     logo_y  = 70
     f_zetta = _find_font(bold=False, size=56)
     f_sep   = _find_font(bold=False, size=48)
@@ -297,25 +289,41 @@ def compose_story_image(
         draw.text((lx,     logo_y),     txt, font=fnt, fill=col)
         lx += draw.textbbox((0, 0), txt, font=fnt)[2]
 
-    # ── 3. Slogan — heavy bold white, CENTER-MIDDLE of image ─────────────────
-    #    Floats over person's chest area. NO dark strip.
-    words    = slogan.split()
-    mid      = max(1, len(words) // 2)
-    lines    = [" ".join(words[:mid]), " ".join(words[mid:])] if len(words) > 3 else [slogan]
+    # ── 3. Slogan — bold white, CENTER-MIDDLE of image ───────────────────────
+    #    Always split into 2 lines (3 words each for 6-word slogans).
+    #    Font auto-sizes down until both lines fit within MAX_W.
+    words = slogan.split()
+    mid   = max(1, len(words) // 2)
+    lines = [" ".join(words[:mid]), " ".join(words[mid:])]
 
-    font_slg = _find_font(bold=True, size=110)
-    for sz in (110, 100, 90, 80, 70):
+    font_slg = _find_font(bold=True, size=80)
+    for sz in (80, 72, 64, 56, 48, 40):
         f = _find_font(bold=True, size=sz)
         if all(draw.textbbox((0, 0), ln, font=f)[2] <= MAX_W for ln in lines):
             font_slg = f
             break
 
-    lh       = draw.textbbox((0, 0), lines[0], font=font_slg)[3]
-    gap      = 12
-    total_h  = lh * len(lines) + gap * (len(lines) - 1)
-    slg_y    = IMAGE_H // 2 - total_h // 2
+    lh        = draw.textbbox((0, 0), lines[0], font=font_slg)[3]
+    gap       = 16
+    total_h   = lh * len(lines) + gap * (len(lines) - 1)
+    slg_y_top = IMAGE_H // 2 - total_h // 2
+
+    # Soft dark gradient behind text zone only (gentle, not harsh bar)
+    pad_v  = 55
+    g_top  = max(0, slg_y_top - pad_v)
+    g_bot  = min(IMAGE_H, slg_y_top + total_h + pad_v)
+    g_h    = g_bot - g_top
+    g_arr  = np.zeros((g_h, IMAGE_W, 4), dtype=np.uint8)
+    for row in range(g_h):
+        t            = row / max(g_h - 1, 1)
+        g_arr[row, :, 3] = int(115 * (1 - (abs(t - 0.5) * 2) ** 1.4))
+    canvas.paste(Image.fromarray(g_arr, "RGBA"), (0, g_top),
+                 Image.fromarray(g_arr, "RGBA"))
+    draw = ImageDraw.Draw(canvas)
+
+    slg_y = slg_y_top
     for line in lines:
-        _centered(line, font_slg, slg_y, color=WHITE, shadow_alpha=200)
+        _centered(line, font_slg, slg_y, color=WHITE, shadow_alpha=160)
         slg_y += lh + gap
 
     # ── 4. Output ─────────────────────────────────────────────────────────────

@@ -37,37 +37,72 @@ FEATURES = [
         "slug":   "xodimlar_nazorati",
         "name":   "Xodimlar nazorati",
         "slogan": "Jamoangizni iiko bilan samarali boshqaring",
-        "hint":   "restaurant manager in bright modern restaurant reviewing staff schedule on a tablet, calm professional expression",
+        "hint":   (
+            "Uzbek male restaurant manager, dark navy apron, sitting at a bright office desk "
+            "inside a modern restaurant, carefully reviewing a weekly staff schedule displayed "
+            "on a tablet screen, natural daylight from large window beside him, "
+            "organized and calm, looking at the tablet with focus"
+        ),
     },
     {
         "slug":   "zaxira_hisobi",
         "name":   "Zaxira hisobi",
         "slogan": "Ombor nazorati orqali foyda ko'paytiring",
-        "hint":   "restaurant owner in bright kitchen checking inventory on a digital tablet, natural daylight",
+        "hint":   (
+            "Uzbek male restaurant employee, dark navy apron over white shirt, "
+            "standing in a bright restaurant storage room or pantry, "
+            "shelves of neatly organized bottles, jars and food ingredients visible behind him, "
+            "holding a clipboard or tablet, checking inventory with focused expression, "
+            "clean bright organized storage area, natural or warm white lighting"
+        ),
     },
     {
         "slug":   "z_hisobot",
         "name":   "Z-hisobot",
         "slogan": "Smena hisobotini soniyalarda xatosiz oling",
-        "hint":   "restaurant cashier in bright modern cafe reviewing daily shift summary on screen, confident pose",
+        "hint":   (
+            "Uzbek male restaurant cashier, dark navy apron over white shirt, "
+            "standing at a bright modern POS terminal counter at end of shift, "
+            "looking at a POS screen displaying daily sales totals and shift summary, "
+            "confident satisfied expression, restaurant interior visible in background, "
+            "warm natural lighting, clean minimal counter surface"
+        ),
     },
     {
         "slug":   "buyurtmalar_tahlili",
         "name":   "Buyurtmalar tahlili",
         "slogan": "Sotuvlarni tahlil qilib ikki baravar o'siring",
-        "hint":   "restaurant manager in bright dining room analyzing sales charts on laptop, floor-to-ceiling windows behind",
+        "hint":   (
+            "Uzbek male restaurant manager, dark navy apron over white shirt, "
+            "standing beside a table in a bright restaurant dining room, "
+            "holding a tablet showing colorful bar charts and order analytics dashboard, "
+            "smiling confidently at camera, blurred dining room background with guests, "
+            "natural daylight, floor-to-ceiling windows behind"
+        ),
     },
     {
         "slug":   "meny_boshqaruvi",
         "name":   "Meny boshqaruvi",
         "slogan": "Menyuni bir marta sozlab hamma joyga yeting",
-        "hint":   "restaurant owner in bright modern restaurant updating digital menu on tablet, white walls and plants in background",
+        "hint":   (
+            "Uzbek male restaurant owner, dark navy apron over white shirt, "
+            "sitting at a marble-top bar counter in a bright modern restaurant, "
+            "updating a digital menu on a large tablet, menu categories and dish photos visible "
+            "on screen, calm focused expression, white walls and green plants in background, "
+            "natural daylight"
+        ),
     },
     {
         "slug":   "moliyaviy_nazorat",
         "name":   "Moliyaviy nazorat",
         "slogan": "Moliya nazoratini iiko orqali ishonch bilan",
-        "hint":   "confident restaurant owner in bright airy restaurant reviewing financial dashboard on laptop, natural window light",
+        "hint":   (
+            "Uzbek male restaurant owner, dark navy apron over white shirt, "
+            "sitting at a clean desk in a bright restaurant office or open dining area, "
+            "laptop screen showing financial charts, revenue graphs and expense breakdown, "
+            "looking at screen with calm confident expression, "
+            "large windows with natural daylight behind, minimalist bright interior"
+        ),
     },
 ]
 
@@ -201,25 +236,40 @@ def compose(photo_bytes: bytes, feat: dict) -> Image.Image:
         draw.text((lx,     logo_y),     txt, font=fnt, fill=col)
         lx += draw.textbbox((0, 0), txt, font=fnt)[2]
 
-    # ── TEXT ELEMENT 2: Slogan — heavy bold white, CENTER-MIDDLE ─────────
-    #    Floats over person's chest. NO dark strip behind text.
+    # ── TEXT ELEMENT 2: Slogan — bold white, CENTER-MIDDLE ───────────────
+    #    Always 2 lines. Font auto-sizes so neither line touches the edges.
     words = feat["slogan"].split()
     mid   = max(1, len(words) // 2)
-    lines = [" ".join(words[:mid]), " ".join(words[mid:])] if len(words) > 3 else [feat["slogan"]]
+    lines = [" ".join(words[:mid]), " ".join(words[mid:])]
 
-    font_slg = _font(72, bold=True)
-    for sz in (72, 62, 54, 46):
+    font_slg = _font(60, bold=True)
+    for sz in (60, 52, 46, 40, 34):
         f = _font(sz, bold=True)
         if all(draw.textbbox((0, 0), ln, font=f)[2] <= MAX_TW for ln in lines):
             font_slg = f
             break
 
-    lh      = draw.textbbox((0, 0), lines[0], font=font_slg)[3]
-    gap     = 8
-    total_h = lh * len(lines) + gap * (len(lines) - 1)
-    slg_y   = H // 2 - total_h // 2
+    lh        = draw.textbbox((0, 0), lines[0], font=font_slg)[3]
+    gap       = 10
+    total_h   = lh * len(lines) + gap * (len(lines) - 1)
+    slg_y_top = H // 2 - total_h // 2
+
+    # Soft dark gradient behind text zone (bell-curve, not a harsh bar)
+    pad_v = 40
+    g_top = max(0, slg_y_top - pad_v)
+    g_bot = min(H, slg_y_top + total_h + pad_v)
+    g_h   = g_bot - g_top
+    g_arr = np.zeros((g_h, W, 4), dtype=np.uint8)
+    for row in range(g_h):
+        t              = row / max(g_h - 1, 1)
+        g_arr[row, :, 3] = int(110 * (1 - (abs(t - 0.5) * 2) ** 1.4))
+    g_img = Image.fromarray(g_arr, "RGBA")
+    canvas.paste(g_img, (0, g_top), g_img)
+    draw = ImageDraw.Draw(canvas)
+
+    slg_y = slg_y_top
     for line in lines:
-        _centered(line, font_slg, slg_y, color=WHITE, shadow_alpha=210)
+        _centered(line, font_slg, slg_y, color=WHITE, shadow_alpha=160)
         slg_y += lh + gap
 
     return canvas.convert("RGB")
