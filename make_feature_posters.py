@@ -34,58 +34,40 @@ os.makedirs(ASSETS_DIR, exist_ok=True)
 # ── 6 feature definitions ─────────────────────────────────────────────────
 FEATURES = [
     {
-        "slug":     "xodimlar_nazorati",
-        "name":     "Xodimlar nazorati",
-        "stat":     "30%",
-        "stat_label": "samaradorlik oshadi",
-        "subtitle": "Har bir xodim ishi real vaqtda nazorat ostida",
-        "slogan":   "Jamoangizni iiko bilan boshqaring",
-        "hint":     "restaurant manager in bright modern restaurant reviewing staff schedule on a tablet, calm professional expression",
+        "slug":   "xodimlar_nazorati",
+        "name":   "Xodimlar nazorati",
+        "slogan": "Jamoangizni iiko bilan samarali boshqaring",
+        "hint":   "restaurant manager in bright modern restaurant reviewing staff schedule on a tablet, calm professional expression",
     },
     {
-        "slug":     "zaxira_hisobi",
-        "name":     "Zaxira hisobi",
-        "stat":     "15%",
-        "stat_label": "isrof kamayadi",
-        "subtitle": "Mahsulot qoldig'ini avtomatik hisoblab chiqadi",
-        "slogan":   "Ombor nazorati — foyda ko'paytiradi",
-        "hint":     "restaurant owner in bright kitchen checking inventory on a digital tablet, natural daylight",
+        "slug":   "zaxira_hisobi",
+        "name":   "Zaxira hisobi",
+        "slogan": "Ombor nazorati orqali foyda ko'paytiring",
+        "hint":   "restaurant owner in bright kitchen checking inventory on a digital tablet, natural daylight",
     },
     {
-        "slug":     "z_hisobot",
-        "name":     "Z-hisobot",
-        "stat":     "5 min",
-        "stat_label": "smena yopish vaqti",
-        "subtitle": "Kun oxirida hisobot avtomatik tayyor bo'ladi",
-        "slogan":   "Hisobot — soniyalarda, xatosiz",
-        "hint":     "restaurant cashier in bright modern cafe reviewing daily shift summary on screen, confident pose",
+        "slug":   "z_hisobot",
+        "name":   "Z-hisobot",
+        "slogan": "Smena hisobotini soniyalarda xatosiz oling",
+        "hint":   "restaurant cashier in bright modern cafe reviewing daily shift summary on screen, confident pose",
     },
     {
-        "slug":     "buyurtmalar_tahlili",
-        "name":     "Buyurtmalar tahlili",
-        "stat":     "2x",
-        "stat_label": "sotuvlar o'sishi",
-        "subtitle": "Eng ko'p sotilgan taomlarni bilib oling",
-        "slogan":   "Ma'lumotga asoslangan qarorlar qabul qiling",
-        "hint":     "restaurant manager in bright dining room analyzing sales charts on laptop, floor-to-ceiling windows behind",
+        "slug":   "buyurtmalar_tahlili",
+        "name":   "Buyurtmalar tahlili",
+        "slogan": "Sotuvlarni tahlil qilib ikki baravar o'siring",
+        "hint":   "restaurant manager in bright dining room analyzing sales charts on laptop, floor-to-ceiling windows behind",
     },
     {
-        "slug":     "meny_boshqaruvi",
-        "name":     "Meny boshqaruvi",
-        "stat":     "100+",
-        "stat_label": "menyu elementi",
-        "subtitle": "Menyuni bir marta sozlang, hamma joyda ishlaydi",
-        "slogan":   "Tez, oson, moslashuvchan meny tizimi",
-        "hint":     "restaurant owner in bright modern restaurant updating digital menu on tablet, white walls and plants in background",
+        "slug":   "meny_boshqaruvi",
+        "name":   "Meny boshqaruvi",
+        "slogan": "Menyuni bir marta sozlab hamma joyga yeting",
+        "hint":   "restaurant owner in bright modern restaurant updating digital menu on tablet, white walls and plants in background",
     },
     {
-        "slug":     "moliyaviy_nazorat",
-        "name":     "Moliyaviy nazorat",
-        "stat":     "24/7",
-        "stat_label": "monitoring",
-        "subtitle": "Daromad va xarajatlar real vaqtda ko'rinadi",
-        "slogan":   "Moliya nazoratini iiko ga ishoning",
-        "hint":     "confident restaurant owner in bright airy restaurant reviewing financial dashboard on laptop, natural window light",
+        "slug":   "moliyaviy_nazorat",
+        "name":   "Moliyaviy nazorat",
+        "slogan": "Moliya nazoratini iiko orqali ishonch bilan",
+        "hint":   "confident restaurant owner in bright airy restaurant reviewing financial dashboard on laptop, natural window light",
     },
 ]
 
@@ -146,16 +128,20 @@ def _prepare_logos() -> tuple[Image.Image, Image.Image]:
 # ── background photo generation ──────────────────────────────────────────
 def generate_photo(hint: str) -> bytes:
     prompt = (
-        f"Bright minimal professional restaurant portrait photography, 9:16 vertical. "
+        f"Bright clean minimal restaurant interior photography, 9:16 vertical portrait format. "
         f"{hint}. "
-        "Setting: modern upscale restaurant, very bright and airy, large floor-to-ceiling windows "
-        "flooding the scene with soft natural daylight. White walls, light blond wooden chairs, "
-        "white marble tables, lush green indoor plants, blurred soft-focus background. "
-        "Color palette: white, ivory, cream, ash wood, deep navy apron. "
-        "Person is sharp and well-lit, background is bokeh. "
-        "Mood: clean, bright, professional, trustworthy. NOT dramatic, NOT moody, NOT dark. "
-        "NO red color grading, NO dark overlays, NO text, NO logos. "
-        "Photorealistic, editorial magazine quality, 4K sharp."
+        "Setting: modern upscale restaurant interior, extremely bright and airy, "
+        "large floor-to-ceiling windows flooding the scene with soft natural daylight. "
+        "White walls, light blond wooden chairs, white marble tables, lush green indoor plants, "
+        "beautifully blurred soft-focus background with shallow depth of field. "
+        "Person wears a dark navy apron over a clean white shirt. "
+        "Person is sharp, well-lit, and looks calm and confident. "
+        "Color palette: white, ivory, cream, ash wood tones, deep navy — "
+        "absolutely NO red, NO pink, NO dark color grading. "
+        "Mood: clean, bright, professional, trustworthy. "
+        "NOT dramatic, NOT moody, NOT dark, NOT high-contrast. "
+        "NO overlays, NO gradients, NO text, NO logos, NO watermarks. "
+        "Photorealistic editorial magazine quality, 4K sharp, natural colors."
     )
     print(f"    fal.ai generating photo …")
     result = fal_client.run(
@@ -201,20 +187,11 @@ def compose(photo_bytes: bytes, feat: dict,
     photo_img = ImageOps.fit(photo_img, (W, H - TOP_H), method=Image.LANCZOS, centering=(0.5, 0.2))
     canvas.paste(photo_img, (0, TOP_H))
 
-    # ── BOTTOM overlay: dark gradient for text readability ─────────────────
-    bot_arr = np.zeros((BOT_H, W, 4), dtype=np.uint8)
-    for y in range(BOT_H):
-        alpha = int(210 * (y / BOT_H) ** 0.55)
-        bot_arr[y, :, 3] = alpha
-    bot_overlay = Image.fromarray(bot_arr, "RGBA")
-    canvas.paste(bot_overlay, (0, PHOTO_BOT), bot_overlay)
-
     draw = ImageDraw.Draw(canvas)
 
     # ── text helpers ────────────────────────────────────────────────────────
-    WHITE      = (255, 255, 255, 255)
-    WHITE_DIM  = (230, 230, 230, 255)
-    MAX_TW     = W - 60   # 640px
+    WHITE   = (255, 255, 255, 255)
+    MAX_TW  = W - 80   # 620px
 
     def _centered(text, font, y, color=WHITE, shadow_alpha=140):
         bbox = draw.textbbox((0, 0), text, font=font)
@@ -230,32 +207,30 @@ def compose(photo_bytes: bytes, feat: dict,
                 return f, sz
         return _font(sizes[-1], bold=bold), sizes[-1]
 
-    # ── STAT (huge number) ─────────────────────────────────────────────────
-    stat_y    = PHOTO_BOT + 20
-    font_stat, _ = _fit_font(feat["stat"], (96, 80, 68), bold=True)
-    _centered(feat["stat"], font_stat, stat_y, color=WHITE)
+    # ── TEXT ELEMENT 1: "ZETTA × iiko" — thin white, top center ───────────
+    #    Sits just inside the photo area, below the logo bar
+    label_y    = TOP_H + 22
+    font_label = _font(22, bold=False)
+    _centered("ZETTA × iiko", font_label, label_y,
+              color=(255, 255, 255, 200), shadow_alpha=120)
 
-    # ── STAT LABEL (small, below stat) ────────────────────────────────────
-    stat_bbox = draw.textbbox((0, 0), feat["stat"], font=font_stat)
-    label_y   = stat_y + (stat_bbox[3] - stat_bbox[1]) + 4
-    font_lbl, _ = _fit_font(feat["stat_label"], (22, 18), bold=False)
-    _centered(feat["stat_label"], font_lbl, label_y, color=WHITE_DIM, shadow_alpha=100)
-
-    # ── SUBTITLE ──────────────────────────────────────────────────────────
-    sub_y = label_y + 30 + 12
-    font_sub, _ = _fit_font(feat["subtitle"], (24, 20, 18), bold=False)
-    _centered(feat["subtitle"], font_sub, sub_y, color=WHITE_DIM)
-
-    # ── SLOGAN (bold) ─────────────────────────────────────────────────────
-    slg_y = sub_y + 34
-    font_slg, slg_sz = _fit_font(feat["slogan"], (28, 24, 20), bold=True)
+    # ── TEXT ELEMENT 2: 6-word slogan — bold white, lower third ──────────
+    font_slg, _ = _fit_font(feat["slogan"], (36, 30, 26), bold=True)
+    slg_bbox    = draw.textbbox((0, 0), feat["slogan"], font=font_slg)
+    slg_h       = slg_bbox[3] - slg_bbox[1]
+    slg_y       = H - 120 - slg_h   # anchored near bottom with breathing room
+    # Subtle dark wash behind slogan only (no full-frame overlay)
+    wash_pad = 16
+    wash_box = [0, slg_y - wash_pad, W, slg_y + slg_h + wash_pad]
+    wash_arr = np.zeros((wash_box[3] - wash_box[1], W, 4), dtype=np.uint8)
+    for row in range(wash_arr.shape[0]):
+        t      = row / wash_arr.shape[0]
+        alpha  = int(140 * (1 - abs(t - 0.5) * 2) ** 0.4)
+        wash_arr[row, :, 3] = alpha
+    wash_img = Image.fromarray(wash_arr, "RGBA")
+    canvas.paste(wash_img, (wash_box[0], wash_box[1]), wash_img)
+    draw = ImageDraw.Draw(canvas)   # refresh draw after paste
     _centered(feat["slogan"], font_slg, slg_y, color=WHITE)
-
-    # ── WEBSITE ───────────────────────────────────────────────────────────
-    web_y    = H - 44
-    font_web = _font(18, bold=False)
-    _centered("zetta.uz — bepul konsultatsiya", font_web, web_y,
-              color=(210, 210, 210, 255), shadow_alpha=80)
 
     return canvas.convert("RGB")
 
