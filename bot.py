@@ -276,37 +276,59 @@ def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
     # ── 3. Logo: "Z E T T A", centered, y=186, 60px ──────────────────────────
     _centered(draw, "Z E T T A", _find_font(bold=False, size=60), y=186)
 
-    # ── 4. Title: bold, centered, y=296 ──────────────────────────────────────
-    #   ≤20 chars → 100px, 1 line
-    #   >20 chars → 85px, up to 2 lines (split at middle word)
-    #   Never exceed 960px wide (60px padding each side)
+    # ── 4. Title: bold, centered, auto-fit to MAX_W ──────────────────────────
     import re
+
     title_upper = re.sub(r'[^\w\s]', '', title).strip().upper()
-    MAX_W       = IMAGE_W - 120   # 960px
+    MAX_W       = IMAGE_W - 120   # 960px (60px padding each side)
+    words       = title_upper.split()
 
-    if len(title_upper) <= 20:
-        t_size = 80
-        font   = _find_font(bold=True, size=t_size)
-        w      = draw.textbbox((0, 0), title_upper, font=font)[2]
-        if w <= MAX_W:
-            title_lines = [title_upper]
-        else:
-            # still too wide at 80px — drop to 68 and single line
-            t_size = 68
-            font   = _find_font(bold=True, size=t_size)
-            title_lines = [title_upper]
-    else:
-        t_size = 68
-        font   = _find_font(bold=True, size=t_size)
-        words  = title_upper.split()
-        mid    = max(1, len(words) // 2)
-        title_lines = [" ".join(words[:mid]), " ".join(words[mid:])]
+    def _line_fits(text: str, fnt) -> bool:
+        return draw.textbbox((0, 0), text, font=fnt)[2] <= MAX_W
 
-    logger.info("Title: %dpx, lines=%d, text=%s", t_size, len(title_lines), title_lines)
+    def _split_n(wds: list, n: int) -> list[str]:
+        """Distribute words into n lines, balanced by word count."""
+        if n == 1:
+            return [" ".join(wds)]
+        base, rem = divmod(len(wds), n)
+        lines_out, start = [], 0
+        for i in range(n):
+            end = start + base + (1 if i < rem else 0)
+            chunk = " ".join(wds[start:end])
+            if chunk:
+                lines_out.append(chunk)
+            start = end
+        return lines_out
+
+    # Try sizes from large to small; for each size try 1, 2, 3 lines
+    chosen_lines: list[str] = []
+    chosen_font  = None
+    t_size       = 80
+    for size in (90, 80, 70, 60, 52, 46):
+        fnt = _find_font(bold=True, size=size)
+        for n_lines in (1, 2, 3):
+            if n_lines > len(words):
+                continue
+            candidate = _split_n(words, n_lines)
+            if all(_line_fits(ln, fnt) for ln in candidate):
+                chosen_lines = candidate
+                chosen_font  = fnt
+                t_size       = size
+                break
+        if chosen_font:
+            break
+
+    # Absolute fallback: 3 lines at smallest size
+    if not chosen_font:
+        t_size      = 46
+        chosen_font = _find_font(bold=True, size=t_size)
+        chosen_lines = _split_n(words, 3)
+
+    logger.info("Title: %dpx, lines=%d, text=%s", t_size, len(chosen_lines), chosen_lines)
     y_pos = 296
-    for line in title_lines:
-        _centered(draw, line, font, y=y_pos)
-        y_pos += t_size + 12
+    for line in chosen_lines:
+        _centered(draw, line, chosen_font, y=y_pos)
+        y_pos += t_size + 14
 
     # ── 5. Output ─────────────────────────────────────────────────────────────
     result = canvas.convert("RGB")
