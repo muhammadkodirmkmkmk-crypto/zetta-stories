@@ -38,10 +38,12 @@ FEATURES = [
         "name":   "Xodimlar nazorati",
         "slogan": "Jamoangizni iiko bilan samarali boshqaring",
         "hint":   (
-            "Uzbek male restaurant manager, dark navy apron, sitting at a bright office desk "
-            "inside a modern restaurant, carefully reviewing a weekly staff schedule displayed "
-            "on a tablet screen, natural daylight from large window beside him, "
-            "organized and calm, looking at the tablet with focus"
+            "Uzbek male restaurant manager, dark navy apron over white shirt, "
+            "sitting at a desk reviewing a weekly staff schedule on a tablet screen. "
+            "BACKGROUND: bright minimal Scandinavian-style restaurant interior, "
+            "floor-to-ceiling windows flooding the scene with soft natural daylight, "
+            "white walls, light blond wood furniture, lush green indoor plants, "
+            "clean airy atmosphere, shallow depth of field blurred background."
         ),
     },
     {
@@ -50,10 +52,11 @@ FEATURES = [
         "slogan": "Ombor nazorati orqali foyda ko'paytiring",
         "hint":   (
             "Uzbek male restaurant employee, dark navy apron over white shirt, "
-            "standing in a bright restaurant storage room or pantry, "
-            "shelves of neatly organized bottles, jars and food ingredients visible behind him, "
-            "holding a clipboard or tablet, checking inventory with focused expression, "
-            "clean bright organized storage area, natural or warm white lighting"
+            "standing in a restaurant storage room holding a clipboard, checking inventory. "
+            "BACKGROUND: warm cozy restaurant storage area with dark wood shelves, "
+            "amber warm evening lighting, neatly organized rows of wine bottles, "
+            "glass jars and food ingredients on shelves behind him, "
+            "rich warm tones — deep amber, honey, dark walnut wood, soft warm glow."
         ),
     },
     {
@@ -62,10 +65,11 @@ FEATURES = [
         "slogan": "Smena hisobotini soniyalarda xatosiz oling",
         "hint":   (
             "Uzbek male restaurant cashier, dark navy apron over white shirt, "
-            "standing at a bright modern POS terminal counter at end of shift, "
-            "looking at a POS screen displaying daily sales totals and shift summary, "
-            "confident satisfied expression, restaurant interior visible in background, "
-            "warm natural lighting, clean minimal counter surface"
+            "standing at a POS terminal counter looking at the sales summary screen at end of shift. "
+            "BACKGROUND: modern open kitchen visible behind him, stainless steel surfaces, "
+            "professional kitchen equipment, chefs working in the background, "
+            "bright industrial overhead lights, active culinary environment, "
+            "cool steel and white tones, busy kitchen energy."
         ),
     },
     {
@@ -74,10 +78,12 @@ FEATURES = [
         "slogan": "Sotuvlarni tahlil qilib ikki baravar o'siring",
         "hint":   (
             "Uzbek male restaurant manager, dark navy apron over white shirt, "
-            "standing beside a table in a bright restaurant dining room, "
-            "holding a tablet showing colorful bar charts and order analytics dashboard, "
-            "smiling confidently at camera, blurred dining room background with guests, "
-            "natural daylight, floor-to-ceiling windows behind"
+            "standing confidently holding a tablet with colorful sales analytics charts. "
+            "BACKGROUND: outdoor restaurant terrace, lush tropical greenery, "
+            "climbing vines, potted palms and plants all around, "
+            "warm natural sunlight flooding the terrace, "
+            "blurred outdoor seating and garden visible behind him, "
+            "fresh open-air natural daylight atmosphere."
         ),
     },
     {
@@ -86,10 +92,11 @@ FEATURES = [
         "slogan": "Menyuni bir marta sozlab hamma joyga yeting",
         "hint":   (
             "Uzbek male restaurant owner, dark navy apron over white shirt, "
-            "sitting at a marble-top bar counter in a bright modern restaurant, "
-            "updating a digital menu on a large tablet, menu categories and dish photos visible "
-            "on screen, calm focused expression, white walls and green plants in background, "
-            "natural daylight"
+            "sitting at a table updating a digital menu on a large tablet. "
+            "BACKGROUND: upscale fine dining restaurant, elegant dark moody interior, "
+            "deep navy and charcoal walls, dramatic warm candlelight on tables, "
+            "gold accent decor, crystal glassware, white linen tablecloths visible behind, "
+            "luxurious sophisticated atmosphere, rich dark color palette."
         ),
     },
     {
@@ -98,10 +105,11 @@ FEATURES = [
         "slogan": "Moliya nazoratini iiko orqali ishonch bilan",
         "hint":   (
             "Uzbek male restaurant owner, dark navy apron over white shirt, "
-            "sitting at a clean desk in a bright restaurant office or open dining area, "
-            "laptop screen showing financial charts, revenue graphs and expense breakdown, "
-            "looking at screen with calm confident expression, "
-            "large windows with natural daylight behind, minimalist bright interior"
+            "sitting at a counter with a laptop showing financial charts and graphs. "
+            "BACKGROUND: busy vibrant casual cafe, bright colorful interior, "
+            "eclectic wall art and plants, warm daylight streaming through large windows, "
+            "lively energetic daytime atmosphere, people in the background, "
+            "cheerful warm tones — terracotta, mustard yellow, sage green accents."
         ),
     },
 ]
@@ -163,22 +171,14 @@ def _prepare_logos() -> tuple[Image.Image, Image.Image]:
 # ── background photo generation ──────────────────────────────────────────
 def generate_photo(hint: str) -> bytes:
     prompt = (
-        f"Bright clean minimal restaurant interior photography, 9:16 vertical portrait format. "
-        f"{hint}. "
-        "Setting: modern upscale restaurant interior, extremely bright and airy, "
-        "large floor-to-ceiling windows flooding the scene with soft natural daylight. "
-        "White walls, light blond wooden chairs, white marble tables, lush green indoor plants, "
-        "beautifully blurred soft-focus background with shallow depth of field. "
-        "Person wears a dark navy apron over a clean white shirt. "
-        "Uzbek male, Central Asian features, dark straight hair, clean-shaven, aged 30-40, "
-        "calm confident smile facing camera directly. "
+        f"Professional portrait photography, 9:16 vertical format. "
+        f"{hint} "
+        "Person: Uzbek male, Central Asian features, dark straight hair, clean-shaven, aged 30-40, "
+        "calm confident smile facing camera directly. Dark navy apron over clean white shirt. "
         "NO headset, NO headphones, NO earpiece, NO earbuds, NO glasses. "
-        "Color palette: white, ivory, cream, ash wood tones, deep navy — "
-        "absolutely NO red, NO pink, NO dark color grading. "
-        "Mood: clean, bright, professional, trustworthy. "
-        "NOT dramatic, NOT moody, NOT dark, NOT high-contrast. "
-        "NO overlays, NO gradients, NO text, NO logos, NO watermarks. "
-        "Photorealistic editorial magazine quality, 4K sharp, natural colors."
+        "Shallow depth of field, subject sharp and well-lit, background naturally blurred. "
+        "NO overlays, NO gradients added, NO text, NO logos, NO watermarks. "
+        "Photorealistic editorial magazine quality, 4K sharp."
     )
     print(f"    fal.ai generating photo …")
     result = fal_client.run(
@@ -201,34 +201,47 @@ def generate_photo(hint: str) -> bytes:
 
 # ── poster composition ────────────────────────────────────────────────────
 def compose(photo_bytes: bytes, feat: dict) -> Image.Image:
-    # ── Photo fills entire frame ──────────────────────────────────────────
+    # Photo fills entire frame, centred on upper-body area
     photo_img = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
-    photo_img = ImageOps.fit(photo_img, (W, H), method=Image.LANCZOS, centering=(0.5, 0.3))
+    photo_img = ImageOps.fit(photo_img, (W, H), method=Image.LANCZOS, centering=(0.5, 0.4))
     canvas    = photo_img.convert("RGBA")
-    draw      = ImageDraw.Draw(canvas)
 
-    MAX_TW = W - 60   # 640px usable width
-    WHITE  = (255, 255, 255, 255)
+    MAX_TW   = W - 80   # 40px margin each side → 620px usable
+    WHITE    = (255, 255, 255, 255)
+    LOGO_COL = (255, 255, 255, 210)
+    SHD      = (0, 0, 0, 130)
 
-    def _centered(text, font, y, color=WHITE, shadow_alpha=170):
+    # ── 1. Bottom gradient: solid dark at very bottom → transparent at top ─
+    GRAD_H = int(H * 0.35)          # 35% of image height
+    g_arr  = np.zeros((GRAD_H, W, 4), dtype=np.uint8)
+    for row in range(GRAD_H):
+        t = 1.0 - (row / max(GRAD_H - 1, 1))  # 1.0 at bottom, 0.0 at top
+        g_arr[row, :, 3] = int(230 * (t ** 0.55))
+    g_img = Image.fromarray(g_arr, "RGBA")
+    canvas.paste(g_img, (0, H - GRAD_H), g_img)
+
+    draw = ImageDraw.Draw(canvas)
+
+    def _centered(text, font, y, color=WHITE, shadow_alpha=140):
         bbox = draw.textbbox((0, 0), text, font=font)
         tw   = bbox[2] - bbox[0]
         x    = (W - tw) // 2
-        draw.text((x + 3, y + 3), text, font=font, fill=(0, 0, 0, shadow_alpha))
+        draw.text((x + 2, y + 2), text, font=font, fill=(0, 0, 0, shadow_alpha))
         draw.text((x, y), text, font=font, fill=color)
 
-    # ── TEXT ELEMENT 1: "Z E T T A  ×  iiko" — 3-part logo, top center ──
-    logo_y  = 52
-    f_zetta = _font(38, bold=False)
-    f_sep   = _font(32, bold=False)
-    f_iiko  = _font(38, bold=True)
+    # ── 2. Logo "Z E T T A  ×  iiko" — small thin text, BOTTOM CENTER ────
+    f_zetta = _font(26, bold=False)
+    f_sep   = _font(22, bold=False)
+    f_iiko  = _font(26, bold=True)
     t_zetta, t_sep, t_iiko = "Z E T T A", "  ×  ", "iiko"
+
+    logo_h = draw.textbbox((0, 0), t_zetta, font=f_zetta)[3]
+    logo_y = H - logo_h - 38        # 38px from very bottom edge
+
     w_z = draw.textbbox((0, 0), t_zetta, font=f_zetta)[2]
     w_s = draw.textbbox((0, 0), t_sep,   font=f_sep)[2]
     w_i = draw.textbbox((0, 0), t_iiko,  font=f_iiko)[2]
     lx  = (W - w_z - w_s - w_i) // 2
-    SHD      = (0, 0, 0, 130)
-    LOGO_COL = (255, 255, 255, 220)
     for txt, fnt, col in [(t_zetta, f_zetta, LOGO_COL),
                           (t_sep,   f_sep,   LOGO_COL),
                           (t_iiko,  f_iiko,  WHITE)]:
@@ -236,8 +249,8 @@ def compose(photo_bytes: bytes, feat: dict) -> Image.Image:
         draw.text((lx,     logo_y),     txt, font=fnt, fill=col)
         lx += draw.textbbox((0, 0), txt, font=fnt)[2]
 
-    # ── TEXT ELEMENT 2: Slogan — bold white, CENTER-MIDDLE ───────────────
-    #    Always 2 lines. Font auto-sizes so neither line touches the edges.
+    # ── 3. Slogan — large bold white, DIRECTLY ABOVE LOGO ────────────────
+    #    Always 2 lines (3+3 words). Font auto-sizes until both fit MAX_TW.
     words = feat["slogan"].split()
     mid   = max(1, len(words) // 2)
     lines = [" ".join(words[:mid]), " ".join(words[mid:])]
@@ -249,27 +262,13 @@ def compose(photo_bytes: bytes, feat: dict) -> Image.Image:
             font_slg = f
             break
 
-    lh        = draw.textbbox((0, 0), lines[0], font=font_slg)[3]
-    gap       = 10
-    total_h   = lh * len(lines) + gap * (len(lines) - 1)
-    slg_y_top = H // 2 - total_h // 2
+    lh      = draw.textbbox((0, 0), lines[0], font=font_slg)[3]
+    gap     = 12
+    total_h = lh * len(lines) + gap * (len(lines) - 1)
 
-    # Soft dark gradient behind text zone (bell-curve, not a harsh bar)
-    pad_v = 40
-    g_top = max(0, slg_y_top - pad_v)
-    g_bot = min(H, slg_y_top + total_h + pad_v)
-    g_h   = g_bot - g_top
-    g_arr = np.zeros((g_h, W, 4), dtype=np.uint8)
-    for row in range(g_h):
-        t              = row / max(g_h - 1, 1)
-        g_arr[row, :, 3] = int(110 * (1 - (abs(t - 0.5) * 2) ** 1.4))
-    g_img = Image.fromarray(g_arr, "RGBA")
-    canvas.paste(g_img, (0, g_top), g_img)
-    draw = ImageDraw.Draw(canvas)
-
-    slg_y = slg_y_top
+    slg_y = logo_y - 26 - total_h   # 26px gap between slogan and logo
     for line in lines:
-        _centered(line, font_slg, slg_y, color=WHITE, shadow_alpha=160)
+        _centered(line, font_slg, slg_y, color=WHITE, shadow_alpha=150)
         slg_y += lh + gap
 
     return canvas.convert("RGB")
