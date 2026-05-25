@@ -42,22 +42,81 @@ OUTPUT_DIR = Path("approved_stories")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 IIKO_FEATURES = [
-    ("SmartControl", "real-time phone control"),
-    ("Moliyaviy hisobotlar", "financial reports online"),
-    ("Ombor boshqaruvi", "warehouse management"),
-    ("Xodimlarni boshqarish", "staff management"),
-    ("Mehmonlar sodiqlik tizimi", "loyalty system iikoCard"),
-    ("Yetkazib berish", "iikoDelivery"),
-    ("Kassa iikoFront", "POS system"),
-    ("Tarmoq boshqaruvi", "iikoChain network"),
-    ("Tashqi menyu", "iikoWeb online menu"),
-    ("Hisobotlar 2.0", "advanced analytics"),
-    ("Koll-markaz", "call center"),
-    ("API integratsiya", "third party integrations"),
-    ("Kassa nazorati", "cash control security"),
-    ("Taom tannarxi", "food cost calculation"),
-    ("Franshiza boshqaruvi", "franchise management"),
+    # Стоп-листы и меню
+    ("Stop-list boshqaruvi",      "real-time menu stop-list management, out-of-stock blocking"),
+    ("Menyu muhandisligi",        "menu engineering profit margin optimization, dish placement"),
+    ("Modifikatorlar va kombo",   "modifiers combo dishes upsell customization"),
+    ("Onlayn menyu QR",           "iikoWeb QR online menu contactless ordering"),
+    # ABC-анализ
+    ("ABC tahlil",                "ABC analysis dish profitability popularity ranking"),
+    ("Sotish tahlili",            "sales trend analysis top sellers slow movers"),
+    # KPI и персонал
+    ("Ofitsiant KPI",             "waiter motivation KPI tips upsell performance bonus"),
+    ("Xodim jadvali",             "staff shift scheduling automated planning"),
+    ("Xodimlarni boshqarish",     "staff management HR access roles permissions"),
+    # Лояльность
+    ("iikoCard sodiqlik",         "loyalty program iikoCard points bonuses discounts"),
+    ("RKEEP sodiqlik",            "RKEEP external loyalty system integration"),
+    ("Chegirmalar va aksiyalar",  "discounts promotions happy hour marketing campaigns"),
+    ("Mijoz ma'lumotlar bazasi",  "customer database CRM repeat guest personalization"),
+    # Банкеты и предзаказы
+    ("Banket va oldinbron",       "banquet hall pre-order deposit management"),
+    ("Stol boshqaruvi",          "table map reservations seating floor management"),
+    ("Onlayn bron",               "online reservation booking widget integration"),
+    # Пречек
+    ("Pretchek texnikasi",        "pre-check printing guest objection handling technique"),
+    # Delivery
+    ("Yetkazib berish",           "iikoDelivery courier dispatch aggregator integration"),
+    ("Koll-markaz",               "call center order taking delivery management"),
+    ("Agregator integratsiya",    "Yandex Delivery Uzum aggregator menu sync automation"),
+    # Фудкост и склад
+    ("Fudkost nazorati",          "food cost calculation recipe costing gross profit"),
+    ("Inventarizatsiya",          "inventory stocktake warehouse reconciliation"),
+    ("Ombor boshqaruvi",          "warehouse stock tracking auto-orders supplier management"),
+    ("Avtomatik buyurtma",        "automatic purchase order reorder point supply chain"),
+    # Отчёты
+    ("Smena hisobotlari",         "shift revenue Z-report cashier close analytics"),
+    ("Moliyaviy hisobotlar",      "P&L financial reports online real-time dashboard"),
+    ("Kengaytirilgan hisobotlar", "advanced BI analytics custom reports export"),
+    # Антифрод и касса
+    ("Antifrod tizimi",           "anti-fraud void discount abuse cashier audit"),
+    ("Kassa iikoFront",           "POS system front office cashier order entry"),
+    ("Kassa nazorati",            "cash drawer control security blind close audit"),
+    # Интеграции
+    ("SmartControl",              "real-time smartphone remote restaurant monitoring"),
+    ("API integratsiya",          "third party API webhook automation integrations"),
+    ("1C integratsiya",           "1C accounting CRM ERP two-way data sync"),
+    ("Tarmoq boshqaruvi",         "iikoChain multi-location central kitchen management"),
+    # Управление сетью/франшизой
+    ("Franshiza boshqaruvi",      "franchise management central menu pricing control"),
+    ("Reklama effektivligi",      "marketing ROI campaign attribution analytics"),
+    # Прочее
+    ("Mijoz fikri",               "customer feedback rating review response management"),
+    ("Buyurtma tarixi",           "order history guest preferences repeat visit tracking"),
+    ("Moliyaviy nazorat",         "budget planning financial forecast cost control"),
 ]
+
+# ---------------------------------------------------------------------------
+# Title format rotation (never repeat same format twice in a row)
+# ---------------------------------------------------------------------------
+
+_TITLE_FORMATS = [
+    ("question",    "Savol shakli: 'Nima uchun 80% restoranlar [mavzu]da pul yo'qotadi?' — qisqa, hayratga soluvchi savol"),
+    ("provocation", "Provokatsiya: 'Sen hali [mavzu]ni qo'lda qilyapsanmi?' — to'g'ridan-to'g'ri murojaat, o'tkir ton"),
+    ("number",      "Raqam: '3 sabab nima uchun [mavzu] restoranlarni o'zgartiradi' — aniq raqam bilan boshlash"),
+    ("intrigue",    "Intriga: '[mavzu]ni yoqsang nima bo'lishini ko'r' — nima sodir bo'lishini bilmoqchi qilish"),
+    ("fact_pain",   "Fakt + og'riq: 'iiko buni 5 yildan beri uddalaydi. Bilarmiding?' — eski muammo, tayyor yechim"),
+    ("command",     "Buyruq: 'Bugun iiko da [mavzu]ni yoq' — qisqa, to'g'ridan-to'g'ri call-to-action"),
+]
+_last_title_fmt: list[int] = [-1]   # mutable container so nested functions can update
+
+
+def _next_title_format() -> tuple[str, str]:
+    """Return the next title format, never repeating the previous one."""
+    choices = [i for i in range(len(_TITLE_FORMATS)) if i != _last_title_fmt[0]]
+    idx = random.choice(choices)
+    _last_title_fmt[0] = idx
+    return _TITLE_FORMATS[idx]
 
 claude_client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
 
@@ -264,21 +323,27 @@ def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
 
 def generate_story_content(feature_name: str, feature_desc: str) -> dict:
     logger.info("Generating content for feature: %s", feature_name)
+    fmt_name, fmt_instruction = _next_title_format()
+    logger.info("Using title format: %s", fmt_name)
     prompt = f"""Sen Zetta Group uchun Instagram Stories kontent yaratuvchisan.
 Zetta Group — O'zbekistondagi iiko rasmiy hamkori. Restoran biznesini avtomatlashtirish yechimlari.
 
 Quyidagi iiko xususiyati uchun kontent yarat:
 - Xususiyat: {feature_name} ({feature_desc})
 
+SARLAVHA FORMATI — bugun shu formatda yoz:
+{fmt_instruction}
+
 Faqat JSON qaytargin, hech qanday izoh yo'q:
 {{
-  "title": "O'ZBEK TILIDA, BOSH HARFLAR, MAKSIMAL 5-6 SO'Z, QISQA VA JOZIBALI SLOGAN",
+  "title": "O'ZBEK TILIDA, BOSH HARFLAR, MAKSIMAL 6-8 SO'Z, YUQORIDAGI FORMAT BO'YICHA",
   "image_prompt": "Detailed English prompt for photorealistic restaurant or business scene related to {feature_name}. Professional photography, warm lighting, elegant interior, staff using technology, no text in image, 4k quality."
 }}
 
 Muhim:
-- title o'zbek tilida, qisqa (maksimal 5-6 so'z), rasmda bir qatorda sig'adigan bo'lsin.
+- title o'zbek tilida, rasmda bir qatorda sig'adigan bo'lsin (maksimal 8 so'z).
 - title ichida HECH QANDAY belgi bo'lmasin: tire (—), nuqta (.), vergul (,), undov (!), savol (?). Faqat oddiy so'zlar.
+- Har safar BOSHQA format ishlatiladi — bugun: {fmt_name}
 - image_prompt inglizcha va batafsil bo'lsin. Boshqa maydon kerak emas."""
 
     response = claude_client.messages.create(
@@ -486,32 +551,49 @@ async def send_story_for_approval(bot, slot_idx: int, story: dict, suffix: str =
 
 
 # ---------------------------------------------------------------------------
-# Daily generation
+# Feature-selection menu helpers
+# ---------------------------------------------------------------------------
+
+def _feature_menu_keyboard(features: list[tuple[str, str]]) -> InlineKeyboardMarkup:
+    """Build a keyboard with one button per feature, 3 per row."""
+    rows = []
+    row: list[InlineKeyboardButton] = []
+    for feat_name, _ in features:
+        # find index in full pool so callback can look it up
+        idx = next((i for i, f in enumerate(IIKO_FEATURES) if f[0] == feat_name), 0)
+        row.append(InlineKeyboardButton(feat_name, callback_data=f"pick_feature:{idx}"))
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    return InlineKeyboardMarkup(rows)
+
+
+async def _send_feature_menu(bot, chat_id: int) -> None:
+    """Pick 15 random features and send them as a selection menu."""
+    features = random.sample(IIKO_FEATURES, 15)
+    kb = _feature_menu_keyboard(features)
+    await bot.send_message(
+        chat_id=chat_id,
+        text=(
+            "📋 *Bugungi mavzuni tanlang*\n\n"
+            "Qaysi iiko xususiyati haqida story yarataylik?\n"
+            "Tugmani bosing — bot shu mavzuda story generatsiya qiladi."
+        ),
+        parse_mode="Markdown",
+        reply_markup=kb,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Daily menu broadcast (replaces auto-generation)
 # ---------------------------------------------------------------------------
 
 async def run_daily_generation(app):
-    logger.info("Starting daily story generation...")
-    await app.bot.send_message(
-        chat_id=TELEGRAM_USER_ID,
-        text="🚀 *Bugungi 5 ta Instagram Story yaratilmoqda...*\nBiroz kuting.",
-        parse_mode="Markdown",
-    )
-
-    features = _pick_features(5)
-    _story_slots.clear()
-
-    for slot_idx, (feat_name, feat_desc) in enumerate(features):
-        try:
-            story = await build_story(feat_name, feat_desc)
-            _story_slots[slot_idx] = story
-            await send_story_for_approval(app.bot, slot_idx, story)
-            await asyncio.sleep(1)
-        except Exception as e:
-            logger.error("Error building story #%d: %s", slot_idx + 1, e)
-            await app.bot.send_message(
-                chat_id=TELEGRAM_USER_ID,
-                text=f"⚠️ Story #{slot_idx + 1} yaratishda xatolik: {e}",
-            )
+    """Sends a 15-feature selection menu at 09:00 Tashkent instead of auto-generating."""
+    logger.info("Daily menu: sending feature selection to owner...")
+    await _send_feature_menu(app.bot, TELEGRAM_USER_ID)
 
 
 # ---------------------------------------------------------------------------
@@ -523,6 +605,30 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     action, slot_str = query.data.split(":", 1)
+
+    # --- PICK FEATURE (from daily menu or /test) ---
+    if action == "pick_feature":
+        feat_idx  = int(slot_str)
+        feat_name, feat_desc = IIKO_FEATURES[feat_idx]
+        await query.edit_message_text(
+            text=f"⏳ *{feat_name}* haqida story yaratilmoqda...\nBiroz kuting.",
+            parse_mode="Markdown",
+        )
+        # Use next available slot index
+        slot_idx = max(_story_slots.keys(), default=-1) + 1
+        try:
+            story = await build_story(feat_name, feat_desc)
+            _story_slots[slot_idx] = story
+            await send_story_for_approval(context.bot, slot_idx, story)
+            logger.info("Story for '%s' generated and sent for approval", feat_name)
+        except Exception as e:
+            logger.error("Error building story for '%s': %s", feat_name, e)
+            await context.bot.send_message(
+                chat_id=TELEGRAM_USER_ID,
+                text=f"⚠️ {feat_name} haqida story yaratishda xatolik: {e}",
+            )
+        return
+
     slot_idx = int(slot_str)
     slot_num = slot_idx + 1
 
@@ -754,16 +860,7 @@ async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Generate and send 1 test story for a random iiko feature."""
     if update.effective_user.id != TELEGRAM_USER_ID:
         return
-    await update.message.reply_text("⏳ Generating test story...")
-    feature_name, feature_desc = random.choice(IIKO_FEATURES)
-    try:
-        story = await build_story(feature_name, feature_desc)
-        slot_idx = 0
-        _story_slots[slot_idx] = story
-        await send_story_for_approval(context.bot, slot_idx, story, suffix=" (TEST)")
-    except Exception as e:
-        logger.error("Test story error: %s", e)
-        await update.message.reply_text(f"⚠️ Test story xatolik: {e}")
+    await _send_feature_menu(context.bot, update.effective_chat.id)
 
 
 def build_application() -> Application:
