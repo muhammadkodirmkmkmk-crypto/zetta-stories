@@ -265,12 +265,13 @@ def compose_story_image(
     photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
     photo = ImageOps.fit(photo, (IMAGE_W, IMAGE_H), method=Image.LANCZOS, centering=(0.5, 0.3))
 
-    # ── 2. Red gradient: solid #A70D19 y=0-280, fade to transparent by y=580 ─
-    SOLID_H  = 280
-    FADE_H   = 580
+    # ── 2. Subtle red vignette — only a gentle tint behind the text area ────
+    #    No solid zone. Fades from alpha=120 at top to 0 by y=460.
+    #    Photo stays visible and clean throughout.
+    FADE_H   = 460
     y_idx    = np.arange(IMAGE_H, dtype=np.float32)
-    fade     = np.clip((y_idx - SOLID_H) / (FADE_H - SOLID_H), 0.0, 1.0)
-    alpha_1d = np.clip(180.0 * (1.0 - fade), 0, 180).astype(np.uint8)
+    fade     = np.clip(y_idx / FADE_H, 0.0, 1.0)
+    alpha_1d = np.clip(120.0 * (1.0 - fade), 0, 120).astype(np.uint8)
 
     overlay_arr = np.zeros((IMAGE_H, IMAGE_W, 4), dtype=np.uint8)
     overlay_arr[:, :, 0] = 0xA7   # #A70D19
