@@ -362,15 +362,15 @@ def compose_story_image(
         draw.text((x + 4, y + 4), text, font=font, fill=(0, 0, 0, shadow_alpha))
         draw.text((x, y), text, font=font, fill=color)
 
-    # ── 2. Bottom gradient: transparent at top → solid dark at bottom ────────
-    #    38% height ensures full gradient coverage after text shift up by 13%.
-    GRAD_H = int(IMAGE_H * 0.38)     # 38% of 1920 = 726px → starts at 62%
-    g_arr  = np.zeros((GRAD_H, IMAGE_W, 4), dtype=np.uint8)
-    for row in range(GRAD_H):
-        t = row / max(GRAD_H - 1, 1)   # 0.0 at top of zone, 1.0 at very bottom edge
-        g_arr[row, :, 3] = int(235 * (t ** 0.5))
+    # ── 2. Bottom gradient: fully smooth fade, starts at 55% of image height ──
+    #    Single full-height array — no sharp edge anywhere.
+    grad_start = int(IMAGE_H * 0.55)
+    g_arr = np.zeros((IMAGE_H, IMAGE_W, 4), dtype=np.uint8)
+    for y in range(grad_start, IMAGE_H):
+        alpha = int(180 * ((y - grad_start) / (IMAGE_H - grad_start)) ** 1.5)
+        g_arr[y, :, 3] = alpha
     g_img = Image.fromarray(g_arr, "RGBA")
-    canvas.paste(g_img, (0, IMAGE_H - GRAD_H), g_img)
+    canvas.paste(g_img, (0, 0), g_img)
     draw = ImageDraw.Draw(canvas)
 
     # ── 3. Logo "Z E T T A  ×  iiko" — small thin text, BOTTOM CENTER ────────

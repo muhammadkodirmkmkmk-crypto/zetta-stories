@@ -215,15 +215,15 @@ def compose(photo_bytes: bytes, feat: dict) -> Image.Image:
     LOGO_COL = (255, 255, 255, 210)
     SHD      = (0, 0, 0, 130)
 
-    # ── 1. Bottom gradient: transparent at top → solid dark at bottom ───────
-    #    38% height ensures coverage after text raised by 13%.
-    GRAD_H = int(H * 0.38)          # 38% of 1244 = ~473px → starts at 62%
-    g_arr  = np.zeros((GRAD_H, W, 4), dtype=np.uint8)
-    for row in range(GRAD_H):
-        t = row / max(GRAD_H - 1, 1)  # 0.0 at top of zone, 1.0 at very bottom edge
-        g_arr[row, :, 3] = int(235 * (t ** 0.5))
+    # ── 1. Bottom gradient: fully smooth fade, starts at 55% of image height ──
+    #    Single full-height array — no sharp edge anywhere.
+    grad_start = int(H * 0.55)
+    g_arr = np.zeros((H, W, 4), dtype=np.uint8)
+    for y in range(grad_start, H):
+        alpha = int(180 * ((y - grad_start) / (H - grad_start)) ** 1.5)
+        g_arr[y, :, 3] = alpha
     g_img = Image.fromarray(g_arr, "RGBA")
-    canvas.paste(g_img, (0, H - GRAD_H), g_img)
+    canvas.paste(g_img, (0, 0), g_img)
 
     draw = ImageDraw.Draw(canvas)
 
