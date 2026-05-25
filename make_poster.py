@@ -38,15 +38,19 @@ def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
 
 def generate_bg() -> bytes:
     prompt = (
-        "Professional restaurant interior photography, 9:16 vertical format. "
-        "A confident restaurant owner/manager, male, wearing a dark navy apron over a crisp white shirt, "
-        "standing front-facing, arms relaxed, slight smile, looking at camera. "
-        "Background: bright modern restaurant dining room, floor-to-ceiling windows on the left flooding the room with soft natural daylight, "
-        "white walls, light wooden chairs, round marble-top tables, lush green potted plants, clean minimal decor. "
-        "Depth of field — owner sharp, background softly blurred. "
-        "Color palette: white, cream, natural wood, deep navy. "
-        "Lighting: soft, even, editorial magazine quality. "
-        "No text, no logos, no UI, photorealistic, 4K."
+        "Bright minimal restaurant portrait photography, 9:16 vertical format. "
+        "Subject: a professional restaurant owner, male, mid-30s, wearing a dark navy apron over a clean crisp white shirt, "
+        "standing still facing the camera, calm confident smile, relaxed arms at sides. "
+        "Setting: modern upscale restaurant interior, very bright and airy, "
+        "large floor-to-ceiling windows behind him flooding the scene with abundant soft natural daylight, "
+        "white walls, light blond wooden chairs, round white marble-top tables, "
+        "lush green indoor plants in background. "
+        "The background is soft-focus bokeh — subject is sharp and well-lit. "
+        "Color palette: pure white, ivory, soft cream, light ash wood tones, deep navy apron. "
+        "Mood: clean, bright, professional, trustworthy — NOT dramatic, NOT moody, NOT dark. "
+        "Lighting: bright even natural daylight from windows, no harsh shadows, airy editorial feel. "
+        "Style: high-end restaurant branding photography, magazine quality. "
+        "No text, no logos, no UI overlays, no dark color grading, photorealistic, 4K sharp."
     )
     print("Generating background via fal.ai flux-pro …")
     result = fal_client.run(
@@ -75,12 +79,12 @@ def compose(photo_bytes: bytes) -> Image.Image:
     canvas = photo.copy()
     draw   = ImageDraw.Draw(canvas)
 
-    # ── top gradient overlay — covers brand + slogan area ─────────────────────
-    top_h   = 340
+    # ── top gradient overlay — light dark band only behind text, not heavy ────
+    top_h   = 300
     top_arr = np.zeros((top_h, W, 4), dtype=np.uint8)
     for y in range(top_h):
-        # strong at top, fades to transparent
-        alpha = int(200 * max(0.0, 1.0 - y / top_h) ** 0.7)
+        # max alpha 140 at top (not 200), fades quickly — keeps image bright
+        alpha = int(140 * max(0.0, 1.0 - y / top_h) ** 0.6)
         top_arr[y, :, 3] = alpha
     top_overlay = Image.fromarray(top_arr, "RGBA")
     canvas.paste(top_overlay, (0, 0), top_overlay)
