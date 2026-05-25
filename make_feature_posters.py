@@ -38,7 +38,7 @@ FEATURES = [
         "name":   "Xodimlar nazorati",
         "slogan": "Jamoangizni iiko bilan samarali boshqaring",
         "hint":   (
-            "Uzbek male restaurant manager, dark navy apron over white shirt, "
+            "Uzbek male restaurant manager, bright red apron with ZETTA logo on the side over white shirt, "
             "standing confidently holding a tablet showing a staff schedule. "
             "MANDATORY BACKGROUND: bright all-white minimalist restaurant interior, "
             "enormous floor-to-ceiling glass windows behind him flooding the room with natural daylight, "
@@ -52,7 +52,7 @@ FEATURES = [
         "name":   "Zaxira hisobi",
         "slogan": "Ombor nazorati orqali foyda ko'paytiring",
         "hint":   (
-            "Uzbek male restaurant employee, dark navy apron over white shirt, "
+            "Uzbek male restaurant employee, bright red apron with ZETTA logo on the side over white shirt, "
             "standing holding a clipboard in a restaurant storage area. "
             "MANDATORY BACKGROUND: warm rustic wooden interior, dark walnut wood paneling on walls, "
             "amber and honey-colored evening lighting, multiple wine glasses hanging overhead, "
@@ -66,7 +66,7 @@ FEATURES = [
         "name":   "Z-hisobot",
         "slogan": "Smena hisobotini soniyalarda xatosiz oling",
         "hint":   (
-            "Uzbek male restaurant cashier, dark navy apron over white shirt, "
+            "Uzbek male restaurant cashier, bright red apron with ZETTA logo on the side over white shirt, "
             "standing at a POS screen reviewing end-of-shift sales report. "
             "MANDATORY BACKGROUND: modern professional open kitchen directly behind him, "
             "shiny stainless steel countertops and shelving, large industrial range hood, "
@@ -80,7 +80,7 @@ FEATURES = [
         "name":   "Buyurtmalar tahlili",
         "slogan": "Sotuvlarni tahlil qilib ikki baravar o'siring",
         "hint":   (
-            "Uzbek male restaurant manager, dark navy apron over white shirt, "
+            "Uzbek male restaurant manager, bright red apron with ZETTA logo on the side over white shirt, "
             "standing holding a tablet with colorful bar charts on screen. "
             "MANDATORY BACKGROUND: outdoor rooftop restaurant terrace, open sky behind him, "
             "panoramic city skyline view in the distance, sunny bright daylight, "
@@ -93,7 +93,7 @@ FEATURES = [
         "name":   "Meny boshqaruvi",
         "slogan": "Menyuni bir marta sozlab hamma joyga yeting",
         "hint":   (
-            "Uzbek male restaurant owner, dark navy apron over white shirt, "
+            "Uzbek male restaurant owner, bright red apron with ZETTA logo on the side over white shirt, "
             "sitting at a table updating a digital menu on a large tablet. "
             "MANDATORY BACKGROUND: upscale fine dining restaurant at night, "
             "very dark dramatic interior, charcoal and deep navy walls, "
@@ -107,7 +107,7 @@ FEATURES = [
         "name":   "Moliyaviy nazorat",
         "slogan": "Moliya nazoratini iiko orqali ishonch bilan",
         "hint":   (
-            "Uzbek male restaurant owner, dark navy apron over white shirt, "
+            "Uzbek male restaurant owner, bright red apron with ZETTA logo on the side over white shirt, "
             "sitting at a counter with a laptop showing financial charts. "
             "MANDATORY BACKGROUND: busy colorful casual cafe in the morning, "
             "bright warm morning sunlight streaming through large windows, "
@@ -178,7 +178,7 @@ def generate_photo(hint: str) -> bytes:
         f"Professional portrait photography, 9:16 vertical format. "
         f"{hint} "
         "Person: Uzbek male, Central Asian features, dark straight hair, clean-shaven, aged 30-40, "
-        "calm confident smile facing camera directly. Dark navy apron over clean white shirt. "
+        "calm confident smile facing camera directly. Bright red apron with ZETTA logo text on the side, over white shirt. "
         "NO headset, NO headphones, NO earpiece, NO earbuds, NO glasses. "
         "Shallow depth of field, subject sharp and well-lit, background naturally blurred. "
         "NO overlays, NO gradients added, NO text, NO logos, NO watermarks. "

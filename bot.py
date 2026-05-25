@@ -361,13 +361,13 @@ IMAGE PROMPT QOIDALARI:
 - O'zbekistonlik erkak, 30-40 yosh, qora soch, soqolsiz yoki engil soqol
 - Yorqin, minimal, zamonaviy restoran ichki ko'rinishi
 - Katta eshkvor oynalar, tabiiy kun yorug'ligi
-- Qoʻngʻir-jigarrang apron, oq ko'ylak
+- Qizil apron, yon tomonida ZETTA logosi bor, oq ko'ylak
 - Fon xiralashtirilgan: yog'och stullar, marmar stollar, yashil o'simliklar
 
 Faqat JSON qaytargin, hech qanday izoh yo'q:
 {{
   "slogan": "aynan 6 so'zlik o'zbek slogani",
-  "image_prompt": "Uzbek male 30-40, dark hair, clean-shaven or light stubble, dark navy apron over white shirt, [specific action related to {feature_name}] in a bright minimal modern restaurant interior, large floor-to-ceiling windows with natural daylight, blurred background with wooden chairs and marble tables and green plants, photorealistic editorial quality, 4K, no text, no logos, NO red or dark color grading, bright airy clean atmosphere"
+  "image_prompt": "Uzbek male 30-40, dark hair, clean-shaven or light stubble, bright red apron with ZETTA logo text on the side over white shirt, [specific action related to {feature_name}] in a bright minimal modern restaurant interior, large floor-to-ceiling windows with natural daylight, blurred background with wooden chairs and marble tables and green plants, photorealistic editorial quality, 4K, no text, no logos, bright airy clean atmosphere"
 }}"""
 
     response = claude_client.messages.create(
@@ -400,7 +400,7 @@ SLOGAN QOIDALARI (qat'iy):
 Faqat JSON qaytargin:
 {{
   "slogan": "aynan 6 so'zlik o'zbek slogani",
-  "image_prompt": "Uzbek male 30-40, dark hair, clean-shaven or light stubble, dark navy apron over white shirt, [specific action] in a bright minimal modern restaurant interior, large floor-to-ceiling windows with natural daylight, blurred background with wooden chairs and marble tables and green plants, photorealistic editorial quality, 4K, no text, no logos, NO red or dark color grading, bright airy clean atmosphere"
+  "image_prompt": "Uzbek male 30-40, dark hair, clean-shaven or light stubble, bright red apron with ZETTA logo text on the side over white shirt, [specific action] in a bright minimal modern restaurant interior, large floor-to-ceiling windows with natural daylight, blurred background with wooden chairs and marble tables and green plants, photorealistic editorial quality, 4K, no text, no logos, bright airy clean atmosphere"
 }}"""
 
     response = claude_client.messages.create(
@@ -424,14 +424,14 @@ async def generate_fal_image(image_prompt: str) -> bytes:
         f"{image_prompt}. "
         "Uzbek male 30-40, Central Asian features, dark straight hair, clean-shaven, "
         "calm confident smile facing camera directly. "
-        "Dark navy apron over white shirt. "
+        "Bright red apron with ZETTA logo text on the side, over white shirt. "
         "NO headset, NO headphones, NO earpiece, NO earbuds, NO glasses. "
         "Bright clean minimal restaurant interior, extremely airy, "
         "large floor-to-ceiling windows flooding scene with soft natural daylight. "
         "White walls, light blond wooden chairs, white marble tables, lush green indoor plants, "
         "blurred soft-focus background, shallow depth of field. "
-        "Color palette: white, ivory, cream, ash wood tones, deep navy. "
-        "Absolutely NO red, NO pink, NO dark color grading, NO overlays, NO gradients. "
+        "Color palette: white, ivory, cream, ash wood tones, bright red. "
+        "Absolutely NO dark color grading, NO overlays, NO gradients. "
         "NOT dramatic, NOT moody, NOT dark, NOT high-contrast. "
         "Photorealistic editorial magazine quality, 4K sharp, natural colors. "
         "No text, no logos, no watermarks."
