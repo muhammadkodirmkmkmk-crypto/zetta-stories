@@ -272,12 +272,13 @@ def compose_story_image(
         draw.text((x + 4, y + 4), text, font=font, fill=(0, 0, 0, shadow_alpha))
         draw.text((x, y), text, font=font, fill=color)
 
-    # ── 2. Bottom gradient: solid dark at very bottom → transparent going up ──
-    GRAD_H = int(IMAGE_H * 0.35)     # 35% of 1920 = 672px
+    # ── 2. Bottom gradient: solid dark at very bottom → transparent at 75% ──
+    #    Only covers bottom 25% so person is fully visible above the zone.
+    GRAD_H = int(IMAGE_H * 0.25)     # 25% of 1920 = 480px → starts at 75%
     g_arr  = np.zeros((GRAD_H, IMAGE_W, 4), dtype=np.uint8)
     for row in range(GRAD_H):
         t = 1.0 - (row / max(GRAD_H - 1, 1))   # 1.0 at bottom, 0.0 at top
-        g_arr[row, :, 3] = int(230 * (t ** 0.55))
+        g_arr[row, :, 3] = int(235 * (t ** 0.5))
     g_img = Image.fromarray(g_arr, "RGBA")
     canvas.paste(g_img, (0, IMAGE_H - GRAD_H), g_img)
     draw = ImageDraw.Draw(canvas)

@@ -39,11 +39,12 @@ FEATURES = [
         "slogan": "Jamoangizni iiko bilan samarali boshqaring",
         "hint":   (
             "Uzbek male restaurant manager, dark navy apron over white shirt, "
-            "sitting at a desk reviewing a weekly staff schedule on a tablet screen. "
-            "BACKGROUND: bright minimal Scandinavian-style restaurant interior, "
-            "floor-to-ceiling windows flooding the scene with soft natural daylight, "
-            "white walls, light blond wood furniture, lush green indoor plants, "
-            "clean airy atmosphere, shallow depth of field blurred background."
+            "standing confidently holding a tablet showing a staff schedule. "
+            "MANDATORY BACKGROUND: bright all-white minimalist restaurant interior, "
+            "enormous floor-to-ceiling glass windows behind him flooding the room with natural daylight, "
+            "white marble dining tables, white chairs, pure white walls, "
+            "NO plants, NO wood, NO dark colors anywhere — "
+            "clean bright white and glass only, very airy and open."
         ),
     },
     {
@@ -52,11 +53,12 @@ FEATURES = [
         "slogan": "Ombor nazorati orqali foyda ko'paytiring",
         "hint":   (
             "Uzbek male restaurant employee, dark navy apron over white shirt, "
-            "standing in a restaurant storage room holding a clipboard, checking inventory. "
-            "BACKGROUND: warm cozy restaurant storage area with dark wood shelves, "
-            "amber warm evening lighting, neatly organized rows of wine bottles, "
-            "glass jars and food ingredients on shelves behind him, "
-            "rich warm tones — deep amber, honey, dark walnut wood, soft warm glow."
+            "standing holding a clipboard in a restaurant storage area. "
+            "MANDATORY BACKGROUND: warm rustic wooden interior, dark walnut wood paneling on walls, "
+            "amber and honey-colored evening lighting, multiple wine glasses hanging overhead, "
+            "rows of wine bottles on dark wooden shelves behind him, "
+            "rich warm amber glow everywhere — NO bright daylight, NO white walls, "
+            "deep warm browns and gold tones only."
         ),
     },
     {
@@ -65,11 +67,12 @@ FEATURES = [
         "slogan": "Smena hisobotini soniyalarda xatosiz oling",
         "hint":   (
             "Uzbek male restaurant cashier, dark navy apron over white shirt, "
-            "standing at a POS terminal counter looking at the sales summary screen at end of shift. "
-            "BACKGROUND: modern open kitchen visible behind him, stainless steel surfaces, "
-            "professional kitchen equipment, chefs working in the background, "
-            "bright industrial overhead lights, active culinary environment, "
-            "cool steel and white tones, busy kitchen energy."
+            "standing at a POS screen reviewing end-of-shift sales report. "
+            "MANDATORY BACKGROUND: modern professional open kitchen directly behind him, "
+            "shiny stainless steel countertops and shelving, large industrial range hood, "
+            "stainless steel pots and pans, chefs in white uniforms working in background, "
+            "bright cool white fluorescent kitchen lighting — "
+            "NO dining room, NO plants, pure industrial kitchen steel and white."
         ),
     },
     {
@@ -78,12 +81,11 @@ FEATURES = [
         "slogan": "Sotuvlarni tahlil qilib ikki baravar o'siring",
         "hint":   (
             "Uzbek male restaurant manager, dark navy apron over white shirt, "
-            "standing confidently holding a tablet with colorful sales analytics charts. "
-            "BACKGROUND: outdoor restaurant terrace, lush tropical greenery, "
-            "climbing vines, potted palms and plants all around, "
-            "warm natural sunlight flooding the terrace, "
-            "blurred outdoor seating and garden visible behind him, "
-            "fresh open-air natural daylight atmosphere."
+            "standing holding a tablet with colorful bar charts on screen. "
+            "MANDATORY BACKGROUND: outdoor rooftop restaurant terrace, open sky behind him, "
+            "panoramic city skyline view in the distance, sunny bright daylight, "
+            "rooftop terrace furniture and railing visible, clear blue sky, "
+            "NO indoor walls, NO plants — open outdoor rooftop city view only."
         ),
     },
     {
@@ -93,10 +95,11 @@ FEATURES = [
         "hint":   (
             "Uzbek male restaurant owner, dark navy apron over white shirt, "
             "sitting at a table updating a digital menu on a large tablet. "
-            "BACKGROUND: upscale fine dining restaurant, elegant dark moody interior, "
-            "deep navy and charcoal walls, dramatic warm candlelight on tables, "
-            "gold accent decor, crystal glassware, white linen tablecloths visible behind, "
-            "luxurious sophisticated atmosphere, rich dark color palette."
+            "MANDATORY BACKGROUND: upscale fine dining restaurant at night, "
+            "very dark dramatic interior, charcoal and deep navy walls, "
+            "tables lit with single candles creating warm soft spotlights, "
+            "crystal wine glasses catching candlelight, crisp white linen tablecloths, "
+            "NO bright light, NO daylight — dark moody elegant atmosphere only."
         ),
     },
     {
@@ -105,11 +108,12 @@ FEATURES = [
         "slogan": "Moliya nazoratini iiko orqali ishonch bilan",
         "hint":   (
             "Uzbek male restaurant owner, dark navy apron over white shirt, "
-            "sitting at a counter with a laptop showing financial charts and graphs. "
-            "BACKGROUND: busy vibrant casual cafe, bright colorful interior, "
-            "eclectic wall art and plants, warm daylight streaming through large windows, "
-            "lively energetic daytime atmosphere, people in the background, "
-            "cheerful warm tones — terracotta, mustard yellow, sage green accents."
+            "sitting at a counter with a laptop showing financial charts. "
+            "MANDATORY BACKGROUND: busy colorful casual cafe in the morning, "
+            "bright warm morning sunlight streaming through large windows, "
+            "coffee cups and pastries on the counter, colorful wall tiles, "
+            "multiple coffee cups and latte art visible, barista equipment, "
+            "cheerful warm yellow and terracotta tones — NO dark colors, NO fine dining."
         ),
     },
 ]
@@ -211,12 +215,13 @@ def compose(photo_bytes: bytes, feat: dict) -> Image.Image:
     LOGO_COL = (255, 255, 255, 210)
     SHD      = (0, 0, 0, 130)
 
-    # ── 1. Bottom gradient: solid dark at very bottom → transparent at top ─
-    GRAD_H = int(H * 0.35)          # 35% of image height
+    # ── 1. Bottom gradient: solid dark at very bottom → transparent at 75% ─
+    #    Only covers bottom 25% so person is fully visible above the zone.
+    GRAD_H = int(H * 0.25)          # 25% of image height → starts at 75%
     g_arr  = np.zeros((GRAD_H, W, 4), dtype=np.uint8)
     for row in range(GRAD_H):
         t = 1.0 - (row / max(GRAD_H - 1, 1))  # 1.0 at bottom, 0.0 at top
-        g_arr[row, :, 3] = int(230 * (t ** 0.55))
+        g_arr[row, :, 3] = int(235 * (t ** 0.5))
     g_img = Image.fromarray(g_arr, "RGBA")
     canvas.paste(g_img, (0, H - GRAD_H), g_img)
 
