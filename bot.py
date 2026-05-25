@@ -207,10 +207,17 @@ def _final_approval_keyboard(slot_idx: int) -> InlineKeyboardMarkup:
 
 
 def _story_caption(slot_num: int, story: dict, suffix: str = "") -> str:
+    t_top  = story.get("title_top", "")
+    t_main = story.get("title_main", story.get("title", ""))
+    t_bot  = story.get("title_bottom", "")
+    parts  = " / ".join(p for p in [t_top, t_main, t_bot] if p)
     return (
         f"📸 *Story #{slot_num}*{suffix}\n\n"
         f"🏷 *Xususiyat:* {story['feature_name']}\n"
-        f"📝 *Sarlavha:* {story['title']}\n"
+        f"📝 *Sarlavha:*\n"
+        f"   _{t_top}_\n"
+        f"   *{t_main}*\n"
+        f"   _{t_bot}_\n"
     )
 
 
@@ -244,7 +251,13 @@ def _wrap_title(title: str, max_chars: int = 18) -> list[str]:
     return lines[:2]
 
 
-def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
+def compose_story_image(
+    photo_bytes: bytes,
+    title_top: str,
+    title_main: str,
+    title_bottom: str,
+) -> bytes:
+    import re
     # ── 1. Photo fills entire 1080×1920 canvas (cover crop, no stretch) ──────
     from PIL import ImageOps
     photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
@@ -267,68 +280,79 @@ def compose_story_image(photo_bytes: bytes, title: str) -> bytes:
     canvas  = Image.alpha_composite(photo.convert("RGBA"), overlay)
     draw    = ImageDraw.Draw(canvas)
 
-    def _centered(d, text, font, y):
+    MAX_W = IMAGE_W - 120  # 960px (60px padding each side)
+
+    def _centered(d, text, font, y, color=(255, 255, 255, 255), shadow_alpha=150):
         bbox = d.textbbox((0, 0), text, font=font)
         x = (IMAGE_W - (bbox[2] - bbox[0])) // 2
-        d.text((x + 3, y + 3), text, font=font, fill=(0, 0, 0, 160))
-        d.text((x, y), text, font=font, fill=(255, 255, 255, 255))
+        d.text((x + 3, y + 3), text, font=font, fill=(0, 0, 0, shadow_alpha))
+        d.text((x, y), text, font=font, fill=color)
 
-    # ── 3. Logo: "Z E T T A", centered, y=186, 60px ──────────────────────────
+    def _clean(text: str) -> str:
+        return re.sub(r"[^\w\s'`'\u2018\u2019\u02bc]", "", text).strip()
+
+    def _fit_1line(text: str, sizes: tuple, bold: bool):
+        """Return (font, size) for the largest size where text fits MAX_W."""
+        for sz in sizes:
+            f = _find_font(bold=bold, size=sz)
+            if draw.textbbox((0, 0), text, font=f)[2] <= MAX_W:
+                return f, sz
+        f = _find_font(bold=bold, size=sizes[-1])
+        return f, sizes[-1]
+
+    # ── 3. Logo ───────────────────────────────────────────────────────────────
     _centered(draw, "Z E T T A", _find_font(bold=False, size=60), y=186)
 
-    # ── 4. Title: bold, centered, auto-fit to MAX_W ──────────────────────────
-    import re
+    # ── 4. Three-layer title hierarchy ────────────────────────────────────────
+    #
+    #   title_top   — small intro/hook, white 85%, ~30px, normal
+    #   title_main  — hero keyword(s), HUGE bold yellow, 90-96px
+    #   title_bottom — qualifier/detail, medium white bold, ~42px
+    #
+    y_cursor = 246   # start just below logo+padding
 
-    title_upper = re.sub(r'[^\w\s]', '', title).strip().upper()
-    MAX_W       = IMAGE_W - 120   # 960px (60px padding each side)
-    words       = title_upper.split()
+    # --- Layer 1: title_top ---
+    top_clean = _clean(title_top)
+    if top_clean:
+        font_top, _ = _fit_1line(top_clean, (32, 28, 24), bold=False)
+        _centered(draw, top_clean, font_top, y=y_cursor,
+                  color=(255, 255, 255, 217), shadow_alpha=90)
+        top_h = draw.textbbox((0, 0), top_clean, font=font_top)[3]
+        y_cursor += top_h + 14
+    else:
+        y_cursor += 10
 
-    def _line_fits(text: str, fnt) -> bool:
-        return draw.textbbox((0, 0), text, font=fnt)[2] <= MAX_W
+    # --- Layer 2: title_main (hero) ---
+    main_clean = _clean(title_main).upper()
+    # Try single-line first at progressively smaller sizes; fall back to 2 lines
+    font_main, main_sz = _fit_1line(main_clean, (96, 86, 76, 66), bold=True)
+    main_words = main_clean.split()
+    main_lines = [main_clean]
 
-    def _split_n(wds: list, n: int) -> list[str]:
-        """Distribute words into n lines, balanced by word count."""
-        if n == 1:
-            return [" ".join(wds)]
-        base, rem = divmod(len(wds), n)
-        lines_out, start = [], 0
-        for i in range(n):
-            end = start + base + (1 if i < rem else 0)
-            chunk = " ".join(wds[start:end])
-            if chunk:
-                lines_out.append(chunk)
-            start = end
-        return lines_out
-
-    # Try sizes from large to small; for each size try 1, 2, 3 lines
-    chosen_lines: list[str] = []
-    chosen_font  = None
-    t_size       = 80
-    for size in (90, 80, 70, 60, 52, 46):
-        fnt = _find_font(bold=True, size=size)
-        for n_lines in (1, 2, 3):
-            if n_lines > len(words):
-                continue
-            candidate = _split_n(words, n_lines)
-            if all(_line_fits(ln, fnt) for ln in candidate):
-                chosen_lines = candidate
-                chosen_font  = fnt
-                t_size       = size
+    if draw.textbbox((0, 0), main_clean, font=font_main)[2] > MAX_W and len(main_words) >= 2:
+        # Try 2-line split at the largest size that fits both halves
+        mid = max(1, len(main_words) // 2)
+        l1, l2 = " ".join(main_words[:mid]), " ".join(main_words[mid:])
+        for sz in (86, 76, 66, 56):
+            f = _find_font(bold=True, size=sz)
+            if draw.textbbox((0,0), l1, font=f)[2] <= MAX_W and \
+               draw.textbbox((0,0), l2, font=f)[2] <= MAX_W:
+                font_main, main_sz = f, sz
+                main_lines = [l1, l2]
                 break
-        if chosen_font:
-            break
 
-    # Absolute fallback: 3 lines at smallest size
-    if not chosen_font:
-        t_size      = 46
-        chosen_font = _find_font(bold=True, size=t_size)
-        chosen_lines = _split_n(words, 3)
+    YELLOW = (255, 210, 50, 255)
+    for line in main_lines:
+        _centered(draw, line, font_main, y=y_cursor, color=YELLOW, shadow_alpha=180)
+        y_cursor += main_sz + 10
+    y_cursor += 8   # extra gap before bottom layer
 
-    logger.info("Title: %dpx, lines=%d, text=%s", t_size, len(chosen_lines), chosen_lines)
-    y_pos = 296
-    for line in chosen_lines:
-        _centered(draw, line, chosen_font, y=y_pos)
-        y_pos += t_size + 14
+    # --- Layer 3: title_bottom ---
+    bot_clean = _clean(title_bottom)
+    if bot_clean:
+        font_bot, _ = _fit_1line(bot_clean, (44, 38, 32, 28), bold=True)
+        _centered(draw, bot_clean, font_bot, y=y_cursor,
+                  color=(255, 255, 255, 255), shadow_alpha=140)
 
     # ── 5. Output ─────────────────────────────────────────────────────────────
     result = canvas.convert("RGB")
@@ -353,29 +377,40 @@ Zetta Group — O'zbekistondagi iiko rasmiy hamkori. Restoran biznesini avtomatl
 Quyidagi iiko xususiyati uchun kontent yarat:
 - Xususiyat: {feature_name} ({feature_desc})
 
-SARLAVHA FORMATI — bugun shu formatda yoz:
+SARLAVHA FORMATI — bugun: {fmt_name}
 {fmt_instruction}
+
+SARLAVHANI 3 QISMGA BO'L (vizual ierarxiya):
+- title_top   : qisqa kirish ibora yoki savol boshi, 2-4 so'z, kichik harflar ok
+                Misol: "sen hali" / "bilasanmi" / "har kuni" / "3 sabab"
+- title_main  : asosiy KALIT SO'Z yoki max 2 so'z, KATTA HARFLAR, juda qisqa va kuchli
+                Misol: "STOP LIST" / "FUDKOST" / "KPI" / "DELIVERY"
+                Bu eng katta va yorqin bo'ladi — rasmdagi asosiy e'tibor shu!
+- title_bottom: oydinlashtiruvchi ibora, 3-6 so'z
+                Misol: "qo'lda yozyapsanmi" / "restoranlarni o'zgartiradi" / "hamma narsani biladi"
+
+Muhim qoidalar:
+- Hech qanday belgi yo'q: tire, nuqta, vergul, undov, savol. Faqat so'zlar va apostrof (')
+- title_main MAKSIMAL 2-3 so'z, qisqa va kuchli
+- Uch qism birga o'qilganda mantiqli gap hosil qilsin
 
 Faqat JSON qaytargin, hech qanday izoh yo'q:
 {{
-  "title": "O'ZBEK TILIDA, BOSH HARFLAR, MAKSIMAL 6-8 SO'Z, YUQORIDAGI FORMAT BO'YICHA",
+  "title_top": "...",
+  "title_main": "...",
+  "title_bottom": "...",
   "image_prompt": "Detailed English prompt for photorealistic restaurant or business scene related to {feature_name}. Professional photography, warm lighting, elegant interior, staff using technology, no text in image, 4k quality."
-}}
-
-Muhim:
-- title o'zbek tilida, rasmda bir qatorda sig'adigan bo'lsin (maksimal 8 so'z).
-- title ichida HECH QANDAY belgi bo'lmasin: tire (—), nuqta (.), vergul (,), undov (!), savol (?). Faqat oddiy so'zlar.
-- Har safar BOSHQA format ishlatiladi — bugun: {fmt_name}
-- image_prompt inglizcha va batafsil bo'lsin. Boshqa maydon kerak emas."""
+}}"""
 
     response = claude_client.messages.create(
         model="claude-opus-4-5",
-        max_tokens=512,
+        max_tokens=600,
         messages=[{"role": "user", "content": prompt}],
     )
     raw  = response.content[0].text.strip().replace("```json", "").replace("```", "").strip()
     data = json.loads(raw)
-    logger.info("Content generated: %s", data.get("title"))
+    logger.info("Content generated: top=%s | main=%s | bottom=%s",
+                data.get("title_top"), data.get("title_main"), data.get("title_bottom"))
     return data
 
 
@@ -385,25 +420,33 @@ def generate_edited_content(story: dict, edit_request: str) -> dict:
 
 Mavjud kontent:
 - feature_name: {story['feature_name']}
-- title: {story['title']}
+- title_top: {story.get('title_top', '')}
+- title_main: {story.get('title_main', story.get('title', ''))}
+- title_bottom: {story.get('title_bottom', '')}
 - image_prompt: {story['image_prompt']}
 
 Foydalanuvchi so'rovi: {edit_request}
 
-Faqat o'zgartirilishi kerak bo'lgan maydonlarni yangilang. Faqat JSON qaytargin:
+Faqat o'zgartirilishi kerak bo'lgan maydonlarni yangilang. 3 qismlik sarlavha tuzilmasini saqlang.
+Hech qanday belgi yo'q: tire, nuqta, vergul, undov, savol. Faqat so'zlar va apostrof.
+
+Faqat JSON qaytargin:
 {{
-  "title": "O'ZBEK TILIDA, BOSH HARFLAR, MAKSIMAL 5-6 SO'Z",
+  "title_top": "qisqa kirish ibora 2-4 so'z",
+  "title_main": "ASOSIY KALIT 1-2 SOZ",
+  "title_bottom": "oydinlashtiruvchi 3-6 so'z",
   "image_prompt": "Detailed English prompt..."
 }}"""
 
     response = claude_client.messages.create(
         model="claude-opus-4-5",
-        max_tokens=512,
+        max_tokens=600,
         messages=[{"role": "user", "content": prompt}],
     )
     raw  = response.content[0].text.strip().replace("```json", "").replace("```", "").strip()
     data = json.loads(raw)
-    logger.info("Edited content: %s", data.get("title"))
+    logger.info("Edited content: top=%s | main=%s | bottom=%s",
+                data.get("title_top"), data.get("title_main"), data.get("title_bottom"))
     return data
 
 
@@ -531,11 +574,18 @@ async def build_story(feature_name: str, feature_desc: str) -> dict:
     content = await loop.run_in_executor(None, generate_story_content, feature_name, feature_desc)
 
     photo_bytes = await generate_fal_image(content["image_prompt"])
-    composed    = compose_story_image(photo_bytes, content["title"])
+    composed    = compose_story_image(
+        photo_bytes,
+        content["title_top"],
+        content["title_main"],
+        content["title_bottom"],
+    )
 
     return {
         "feature_name": feature_name,
-        "title":        content["title"],
+        "title_top":    content["title_top"],
+        "title_main":   content["title_main"],
+        "title_bottom": content["title_bottom"],
         "image_prompt": content["image_prompt"],
         "image_bytes":  composed,
     }
@@ -546,11 +596,18 @@ async def build_edited_story(story: dict, edit_request: str) -> dict:
     content = await loop.run_in_executor(None, generate_edited_content, story, edit_request)
 
     photo_bytes = await generate_fal_image(content["image_prompt"])
-    composed    = compose_story_image(photo_bytes, content["title"])
+    composed    = compose_story_image(
+        photo_bytes,
+        content["title_top"],
+        content["title_main"],
+        content["title_bottom"],
+    )
 
     return {
         "feature_name": content.get("feature_name", story["feature_name"]),
-        "title":        content["title"],
+        "title_top":    content["title_top"],
+        "title_main":   content["title_main"],
+        "title_bottom": content["title_bottom"],
         "image_prompt": content["image_prompt"],
         "image_bytes":  composed,
     }
