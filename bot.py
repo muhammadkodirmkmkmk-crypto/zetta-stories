@@ -36,6 +36,8 @@ SECOND_APPROVER_ID    = 182606553
 INSTAGRAM_USERNAME = os.environ.get("INSTAGRAM_USERNAME", "")
 INSTAGRAM_PASSWORD = os.environ.get("INSTAGRAM_PASSWORD", "")
 
+BOT_VERSION = "2.0.0"   # 2-line white title, 40-feature pool, daily menu
+
 BRAND_RED = "#A70D19"
 IMAGE_W, IMAGE_H = 1080, 1920
 OUTPUT_DIR = Path("approved_stories")
