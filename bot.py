@@ -152,7 +152,7 @@ ROLE_STYLES: dict[str, dict] = {
     ROLE_MANAGER: {
         "person_desc": (
             "Uzbek male restaurant MANAGER or WAITER aged 30-40, dark straight hair, clean-shaven, "
-            "bright red apron with ZETTA logo on the side over white shirt, "
+            "wearing a neat white dress shirt and dark trousers, NO apron, "
             "standing upright holding a tablet or clipboard, observing the dining area, "
             "confident organized posture facing camera directly"
         ),
@@ -165,13 +165,13 @@ ROLE_STYLES: dict[str, dict] = {
         "claude_hint": (
             "Rol: MENEJER yoki OFITSIANT (manager/waiter). "
             "Uslub: yorqin, zamonaviy, tartibli. "
-            "Shaxs: qizil apron va ZETTA logosi, restoran zalida tablet yoki clipboard bilan."
+            "Shaxs: oq ko'ylak va qoramtir shim (apron yo'q), restoran zalida tablet yoki clipboard bilan."
         ),
     },
     ROLE_CHEF: {
         "person_desc": (
             "Uzbek male restaurant CHEF or kitchen manager aged 28-38, dark straight hair, clean-shaven, "
-            "white chef coat with bright red apron with ZETTA logo on the side, "
+            "wearing a classic white chef coat, NO apron, "
             "standing in professional kitchen environment, focused skilled expression facing camera"
         ),
         "background_desc": (
@@ -183,7 +183,7 @@ ROLE_STYLES: dict[str, dict] = {
         "claude_hint": (
             "Rol: OSHPAZ / OSHXONA MENEJERI (chef). "
             "Uslub: professional oshxona, po'lat yuzalar, kreativ. "
-            "Shaxs: oq oshpaz formasi ustida qizil apron va ZETTA logosi, oshxona fonida."
+            "Shaxs: oq oshpaz formasi (apron yo'q), oshxona fonida."
         ),
     },
 }
