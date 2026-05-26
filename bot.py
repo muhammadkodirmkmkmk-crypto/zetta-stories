@@ -816,7 +816,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"📋 *Zetta Stories — Tasdiqlash so'rovi*\n\n"
                 f"📸 Story #{slot_num}\n"
                 f"🏷 *Xususiyat:* {story['feature_name']}\n"
-                f"📝 *Sarlavha:* {story['title']}\n"
+                f"📝 *Slogan:* {story['slogan']}\n"
                 "Instagram Stories-ga joylashtirilsinmi?"
             ),
             parse_mode="Markdown",
