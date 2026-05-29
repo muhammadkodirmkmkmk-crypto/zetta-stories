@@ -131,16 +131,16 @@ def _detect_role(feature_name: str) -> str:
 ROLE_STYLES: dict[str, dict] = {
     ROLE_OWNER: {
         "person_desc": (
-            "confident Uzbek male restaurant OWNER aged 38-45, dark straight hair, clean-shaven, "
-            "wearing a tailored dark charcoal suit jacket and white dress shirt, NO apron, "
-            "sitting at a sleek executive desk or standing in a commanding posture, "
-            "calm authoritative expression facing camera directly"
+            "confident Uzbek restaurant OWNER aged 35-48, "
+            "GENDER VARIETY — use either: professional Uzbek male with dark straight hair clean-shaven in tailored dark suit and white dress shirt "
+            "OR elegant Uzbek female with dark hair neatly styled subtle professional makeup in tailored blazer and silk blouse — alternate randomly. "
+            "NO apron, sitting at executive desk or standing in commanding posture, calm authoritative expression"
         ),
         "background_desc": (
-            "elegant upscale fine dining restaurant, very dark moody interior, "
-            "deep charcoal and navy walls, tables lit by single candles creating warm spotlights, "
-            "crystal glassware, white linen tablecloths, gold accent decor, "
-            "luxurious sophisticated atmosphere, professional dramatic lighting"
+            "elegant upscale restaurant interior, warm sophisticated lighting, "
+            "soft golden ambient light from ceiling fixtures and candles, "
+            "cream and warm walnut wood tones, bright enough to see all details clearly, "
+            "tasteful luxurious atmosphere, well-exposed professional photography"
         ),
         "mood": "professional, successful, premium, authoritative, executive",
         "claude_hint": (
@@ -151,10 +151,10 @@ ROLE_STYLES: dict[str, dict] = {
     },
     ROLE_MANAGER: {
         "person_desc": (
-            "Uzbek male restaurant MANAGER or WAITER aged 30-40, dark straight hair, clean-shaven, "
-            "wearing a neat white dress shirt and dark trousers, NO apron, "
-            "standing upright holding a tablet or clipboard, observing the dining area, "
-            "confident organized posture facing camera directly"
+            "Uzbek restaurant MANAGER or WAITER aged 28-40, "
+            "GENDER VARIETY — use either: Uzbek male dark straight hair clean-shaven white dress shirt dark trousers "
+            "OR Uzbek female dark hair tied back light natural makeup white blouse dark skirt — alternate randomly. "
+            "NO apron, holding tablet or clipboard, confident organized posture facing camera"
         ),
         "background_desc": (
             "bright modern restaurant dining hall, floor-to-ceiling windows with natural daylight, "
@@ -170,14 +170,15 @@ ROLE_STYLES: dict[str, dict] = {
     },
     ROLE_CHEF: {
         "person_desc": (
-            "Uzbek male restaurant CHEF or kitchen manager aged 28-38, dark straight hair, clean-shaven, "
-            "wearing a classic white chef coat, NO apron, "
-            "standing in professional kitchen environment, focused skilled expression facing camera"
+            "Uzbek restaurant CHEF or kitchen manager aged 26-40, "
+            "GENDER VARIETY — use either: Uzbek male dark straight hair clean-shaven white chef coat "
+            "OR Uzbek female dark hair under chef cap light natural makeup white chef coat — alternate randomly. "
+            "standing confidently in kitchen, skilled focused expression facing camera"
         ),
         "background_desc": (
-            "professional restaurant kitchen, shiny stainless steel countertops and shelving, "
-            "large industrial range hood, professional kitchen equipment, "
-            "warm overhead kitchen lighting, active culinary environment, steel and warm tones"
+            "bright modern professional restaurant kitchen, clean stainless steel countertops, "
+            "strong bright white LED overhead lighting, well-illuminated culinary environment, "
+            "clean organized kitchen, bright and clear atmosphere, white and steel tones"
         ),
         "mood": "creative, skilled, focused, passionate, expert",
         "claude_hint": (
@@ -520,7 +521,8 @@ async def generate_fal_image(image_prompt: str,
     enhanced = (
         f"{image_prompt}. "
         f"PERSON: {style['person_desc']}. "
-        "Central Asian features, dark straight hair, clean-shaven, "
+        "Central Asian features, dark straight hair, natural appearance, "
+        "well-lit face, proper exposure, bright enough to see clearly, "
         "calm confident smile facing camera directly. "
         "NO headset, NO headphones, NO earpiece, NO earbuds, NO glasses. "
         f"BACKGROUND: {style['background_desc']}. "
@@ -1015,3 +1017,4 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
     return app
+
