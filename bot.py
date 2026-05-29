@@ -128,13 +128,21 @@ def _detect_role(feature_name: str) -> str:
         return ROLE_CHEF
     return ROLE_MANAGER
 
+# ─── Gender-specific person descriptions ─────────────────────────────────────
+_OWNER_MALE_DESC   = "confident Uzbek male restaurant OWNER aged 38-45, dark straight hair, clean-shaven, wearing a tailored dark charcoal suit and white dress shirt, NO apron, sitting at executive desk or standing confidently, calm authoritative expression"
+_OWNER_FEMALE_DESC = "confident Uzbek female restaurant OWNER aged 35-45, dark hair neatly styled, subtle professional makeup, wearing a tailored blazer and elegant silk blouse, NO apron, sitting at executive desk or standing confidently, calm authoritative expression"
+_MGR_MALE_DESC     = "Uzbek male restaurant MANAGER aged 30-40, dark straight hair, clean-shaven, white dress shirt dark trousers, NO apron, holding tablet or clipboard, confident organized posture"
+_MGR_FEMALE_DESC   = "Uzbek female restaurant MANAGER aged 28-38, dark hair tied back, light natural makeup, white blouse dark skirt, NO apron, holding tablet or clipboard, confident organized posture"
+_CHEF_MALE_DESC    = "Uzbek male restaurant CHEF aged 28-38, dark straight hair, clean-shaven, white chef coat, standing in kitchen, skilled focused expression"
+_CHEF_FEMALE_DESC  = "Uzbek female restaurant CHEF aged 26-38, dark hair under chef cap, light natural makeup, white chef coat, standing in kitchen, skilled focused expression"
+
+# Gender alternation counter — even=male, odd=female
+_gender_counter = 0
+
 ROLE_STYLES: dict[str, dict] = {
     ROLE_OWNER: {
         "person_desc": (
-            "confident Uzbek restaurant OWNER aged 35-48, "
-            "GENDER VARIETY — use either: professional Uzbek male with dark straight hair clean-shaven in tailored dark suit and white dress shirt "
-            "OR elegant Uzbek female with dark hair neatly styled subtle professional makeup in tailored blazer and silk blouse — alternate randomly. "
-            "NO apron, sitting at executive desk or standing in commanding posture, calm authoritative expression"
+            (_OWNER_MALE_DESC if _gender_counter % 2 == 0 else _OWNER_FEMALE_DESC)
         ),
         "background_desc": (
             "elegant upscale restaurant interior, warm sophisticated lighting, "
@@ -151,10 +159,7 @@ ROLE_STYLES: dict[str, dict] = {
     },
     ROLE_MANAGER: {
         "person_desc": (
-            "Uzbek restaurant MANAGER or WAITER aged 28-40, "
-            "GENDER VARIETY — use either: Uzbek male dark straight hair clean-shaven white dress shirt dark trousers "
-            "OR Uzbek female dark hair tied back light natural makeup white blouse dark skirt — alternate randomly. "
-            "NO apron, holding tablet or clipboard, confident organized posture facing camera"
+            (_MGR_MALE_DESC if _gender_counter % 2 == 0 else _MGR_FEMALE_DESC)
         ),
         "background_desc": (
             "bright modern restaurant dining hall, floor-to-ceiling windows with natural daylight, "
@@ -170,10 +175,7 @@ ROLE_STYLES: dict[str, dict] = {
     },
     ROLE_CHEF: {
         "person_desc": (
-            "Uzbek restaurant CHEF or kitchen manager aged 26-40, "
-            "GENDER VARIETY — use either: Uzbek male dark straight hair clean-shaven white chef coat "
-            "OR Uzbek female dark hair under chef cap light natural makeup white chef coat — alternate randomly. "
-            "standing confidently in kitchen, skilled focused expression facing camera"
+            (_CHEF_MALE_DESC if _gender_counter % 2 == 0 else _CHEF_FEMALE_DESC)
         ),
         "background_desc": (
             "bright modern professional restaurant kitchen, clean stainless steel countertops, "
@@ -516,11 +518,22 @@ Faqat JSON qaytargin:
 
 async def generate_fal_image(image_prompt: str,
                              role: str = ROLE_MANAGER) -> bytes:
-    logger.info("Generating image via fal.ai flux-pro (role=%s)...", role)
+    global _gender_counter
+    _gender_counter += 1
+    logger.info("Generating image via fal.ai flux-pro (role=%s, gender=%s)...",
+                role, "male" if _gender_counter % 2 == 0 else "female")
     style = ROLE_STYLES[role]
+    # Select gender based on counter (even=male, odd=female)
+    gender_is_male = (_gender_counter % 2 == 0)
+    person_descs = {
+        ROLE_OWNER:   (_OWNER_MALE_DESC   if gender_is_male else _OWNER_FEMALE_DESC),
+        ROLE_MANAGER: (_MGR_MALE_DESC     if gender_is_male else _MGR_FEMALE_DESC),
+        ROLE_CHEF:    (_CHEF_MALE_DESC    if gender_is_male else _CHEF_FEMALE_DESC),
+    }
+    person_desc = person_descs.get(role, style['person_desc'])
     enhanced = (
         f"{image_prompt}. "
-        f"PERSON: {style['person_desc']}. "
+        f"PERSON: {person_desc}. "
         "Central Asian features, dark straight hair, natural appearance, "
         "well-lit face, proper exposure, bright enough to see clearly, "
         "calm confident smile facing camera directly. "
